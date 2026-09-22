@@ -2,15 +2,7 @@
 
 **Mr Irrelevant** en la barra de estado de [Claude Code](https://code.claude.com): un personaje en pixel art que te acompaña mientras trabajas. Casi siempre está tranquilo, a veces saluda, celebra cuando Claude trabaja y se cansa a medida que se llena el contexto.
 
-<!-- Demo: graba la barra (ScreenToGif sirve), guárdala en docs/demo.gif y descomenta la línea de abajo
-![claude-buddy en acción](docs/demo.gif)
--->
-
-```
-Opus 5 | mi-proyecto | main* ↑2          ▄▄▀▀▀▀▄▄
-▓▓▓▓░░░░░░ 42%                          (Mr Irrelevant
-                                          en pixel art)
-```
+![claude-buddy en acción: Mr Irrelevant tranquilo y luego celebrando mientras Claude trabaja](docs/demo.gif)
 
 ## Qué hace
 
