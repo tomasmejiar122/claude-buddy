@@ -60,10 +60,10 @@ lo que haya dentro:
 
 3. **Si `$ARGUMENTS` trae texto**, no muestres menús: interprétalo. Puede traer
    un personaje (`gato`, `mr`, `auto`), un tamaño (`mini`, `normal`, `grande`),
-   la posición (`derecha 90`, `pegado`), segmentos (`segments model dir git
-   context clock`, `con hora`, `sin mood`) o `reset` para borrar la
-   configuración de esta carpeta. Si algo no se entiende, dilo y muestra las
-   opciones.
+   la posición (`derecha 90`, `pegado`), la alineación (`centrado`,
+   `izquierda`), segmentos (`segments model dir git context clock`, `con
+   hora`) o `reset` para borrar la configuración de esta carpeta. Si algo no
+   se entiende, dilo y muestra las opciones.
 
 4. Escribe solo las claves que se pidieron, conservando el resto de la entrada
    de esta carpeta y del archivo.
