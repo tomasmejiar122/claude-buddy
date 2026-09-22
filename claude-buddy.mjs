@@ -89,9 +89,6 @@ const SEGMENTS = {
     dir: () => `${blue}${dirName}${reset}`,
     git: () => gitStr,
     context: () => ctxStr,
-    mood: () => `${dim}${working ? 'trabajando' + '.'.repeat(1 + frame % 3)
-        : pct >= 80 ? 'agotado, toca /compact'
-        : pct >= 50 ? 'algo cansado' : ''}${reset}`,
     clock: () => {
         const d = new Date();
         return `${dim}${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}${reset}`;
@@ -107,10 +104,25 @@ const SEGMENTS = {
         return a == null && r == null ? '' : `${green}+${a || 0}${reset} ${red}-${r || 0}${reset}`;
     },
 };
-const DEFAULT_SEGMENTS = ['model', 'dir', 'git', 'context', 'mood'];
+const DEFAULT_SEGMENTS = ['model', 'dir', 'git', 'context'];
 
 // Info block on the left (fixed width) and the character rows on the right.
 const visible = (s) => s.replace(/\x1b\[[0-9;]*m/g, '').length;
+
+// Cut a colored string to n visible characters, keeping the escape codes
+function truncate(s, n) {
+    if (visible(s) <= n) return s;
+    let out = '', shown = 0;
+    for (const part of s.split(/(\x1b\[[0-9;]*m)/)) {
+        if (part.startsWith(ESC)) { out += part; continue; }
+        for (const ch of part) {
+            if (shown >= n - 1) return `${out}…${reset}`;
+            out += ch;
+            shown++;
+        }
+    }
+    return `${out}${reset}`;
+}
 function buildInfo(segments) {
     // lay the segments out in order, wrapping to a new line at ~34 columns
     const lines = [];
@@ -136,8 +148,7 @@ function buildInfo(segments) {
 }
 
 function writeRows(rows, segments) {
-    const info = buildInfo(segments);
-    const textWidth = Math.max(30, ...info.map(visible));
+    let info = buildInfo(segments);
     // Where the character starts: hard against the right edge by default
     // (Claude Code sets COLUMNS to the terminal width), or at a fixed column
     const spriteWidth = Math.max(0, ...rows.map(visible));
@@ -145,6 +156,12 @@ function writeRows(rows, segments) {
     const at = settings.at === 'right' && cols
         ? Math.max(0, cols - spriteWidth - settings.margin)
         : Number(settings.at) || 0;
+    // Long folder or branch names get cut instead of pushing the character
+    // off the screen
+    if (at > 4) info = info.map((line) => truncate(line, at - 2));
+    // A minimum text block of 30 columns, unless the terminal is narrower
+    const floor = at > 2 ? Math.min(30, at - 2) : 30;
+    const textWidth = Math.max(floor, ...info.map(visible));
     const width = Math.max(textWidth, at - 2);
     const top = Math.max(0, Math.floor((rows.length - info.length) / 2));
     // Claude Code trims leading whitespace (NBSP included), which would glue

@@ -15,7 +15,7 @@ lo que haya dentro:
     "c:/users/tomas/onedrive/irrelevant/web": {
       "character": "gato",
       "size": "normal",
-      "segments": ["model", "dir", "git", "context", "mood", "clock"]
+      "segments": ["model", "dir", "git", "context", "clock"]
     }
   }
 }
@@ -26,9 +26,9 @@ lo que haya dentro:
   partir del nombre de la carpeta).
 - **`size`**: `mini` (4 líneas), `normal` (7 líneas), `grande` (13 líneas).
 - **`segments`**: los datos de la izquierda, en orden: `model`, `dir`, `git`,
-  `context`, `mood`, `clock` (la hora), `session` (duración de la sesión),
-  `lines` (líneas añadidas y quitadas). Los predeterminados son `model`,
-  `dir`, `git`, `context`, `mood`.
+  `context`, `clock` (la hora), `session` (duración de la sesión), `lines`
+  (líneas añadidas y quitadas). Los predeterminados son `model`, `dir`, `git`
+  y `context`.
 - **`at`**: dónde empieza el personaje. `"right"` (lo predeterminado) lo pega
   al borde derecho de la terminal; `0` lo pone justo después del texto; un
   número lo fija en esa columna.
@@ -51,7 +51,8 @@ lo que haya dentro:
    - **Tamaño** (header "Tamaño"): `Dejar como está`, `mini · 4 líneas`,
      `normal · 7 líneas`, `grande · 13 líneas`.
    - **Datos** (header "Datos", multiSelect): `Hora`, `Duración de la sesión`,
-     `Líneas +/-`, `Sin estado de ánimo`. Lo que no marque se queda como está.
+     `Líneas +/-`, `Solo lo básico` (modelo, carpeta, git y contexto). Lo que
+     no marque se queda como está.
 
    Si eligió una familia, haz una segunda llamada con una sola pregunta que
    liste esos 3 o 4 personajes, más `Automático por carpeta` cuando quepa.

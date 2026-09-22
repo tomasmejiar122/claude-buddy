@@ -35,12 +35,12 @@ Todo se guarda por carpeta (y cubre lo que haya dentro) en `~/.claude/claude-bud
 
 **Posición:** el personaje va pegado al borde derecho de la terminal, usando el ancho que Claude Code pasa en `COLUMNS`; `margin` (4 por defecto) son las columnas que quedan libres. Con `at` puedes fijarlo en una columna concreta o pegarlo al texto con `0`, y con `align: "center"` centras el bloque de texto.
 
-**Segmentos**, en el orden que los escribas: `model`, `dir`, `git`, `context`, `mood`, `clock`, `session` (duración de la sesión) y `lines` (líneas añadidas y quitadas por Claude). Se acomodan solos en varias líneas.
+**Segmentos**, en el orden que los escribas: `model`, `dir`, `git`, `context`, `clock`, `session` (duración de la sesión) y `lines` (líneas añadidas y quitadas por Claude). Se acomodan solos en varias líneas, con los separadores alineados, y se recortan si no caben.
 
 ## Qué muestra
 
 - **El personaje**: tranquilo, parpadeando de vez en cuando; a ratos saluda; Mr además mira a los lados y cruza los brazos. Cuando Claude trabaja, celebra con los brazos arriba y chispas.
-- **El contexto**: a partir del 50% el personaje se va oscureciendo; por encima del 80% te sugiere hacer `/compact`.
+- **El contexto**: a partir del 50% el personaje se va oscureciendo, y por encima del 80% le sale una gota de sudor.
 - **Git**: rama, `*` si hay cambios sin commit y `↑` / `↓` para los commits por subir o bajar.
 - **Ligero**: Node.js sin dependencias, del orden de 100 ms por actualización.
 
