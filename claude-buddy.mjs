@@ -149,12 +149,13 @@ function writeRows(rows, segments) {
     const top = Math.max(0, Math.floor((rows.length - info.length) / 2));
     // Claude Code trims leading whitespace (NBSP included), which would glue
     // rows without info text to the left edge; they start with BLANK instead.
+    // "center" moves the whole text block, not each line: shifting lines one
+    // by one would break the aligned separators
+    const blockWidth = Math.max(0, ...info.map(visible));
+    const indent = settings.align === 'center' ? Math.floor((textWidth - blockWidth) / 2) : 0;
     const out = rows.map((row, i) => {
         const j = i - top;
         const text = j >= 0 && j < info.length ? info[j] : BLANK;
-        // "center" centers each line of text inside the text block
-        const indent = settings.align === 'center'
-            ? Math.floor((textWidth - visible(text)) / 2) : 0;
         return `${reset}${NBSP.repeat(indent)}${text}` +
             `${NBSP.repeat(width - indent - visible(text) + 2)}${row}${reset}`;
     });
