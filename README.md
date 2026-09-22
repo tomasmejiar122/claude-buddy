@@ -23,7 +23,7 @@ Sin argumentos abre menús para elegir personaje, tamaño y datos; con argumento
 /buddy gato                cambia el personaje de esta carpeta
 /buddy panda mini          personaje y tamaño a la vez
 /buddy grande              solo el tamaño
-/buddy derecha 90          corre el personaje hacia la derecha
+/buddy pegado              deja el personaje junto al texto
 /buddy segments model dir git context clock
 /buddy reset               vuelve a lo predeterminado
 ```
@@ -32,7 +32,7 @@ Todo se guarda por carpeta (y cubre lo que haya dentro) en `~/.claude/claude-bud
 
 **Tamaños:** `mini` (4 líneas, con una versión 8×8 del personaje), `normal` (7 líneas), `grande` (13 líneas).
 
-**Posición:** `at` es la columna donde empieza el personaje, por si lo quieres pegado al borde derecho.
+**Posición:** el personaje va pegado al borde derecho de la terminal, usando el ancho que Claude Code pasa en `COLUMNS`. Con `at` puedes fijarlo en una columna concreta o pegarlo al texto con `0`.
 
 **Segmentos**, en el orden que los escribas: `model`, `dir`, `git`, `context`, `mood`, `clock`, `session` (duración de la sesión) y `lines` (líneas añadidas y quitadas por Claude). Se acomodan solos en varias líneas.
 

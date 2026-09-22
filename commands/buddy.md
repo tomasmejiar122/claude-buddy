@@ -29,9 +29,9 @@ lo que haya dentro:
   `context`, `mood`, `clock` (la hora), `session` (duración de la sesión),
   `lines` (líneas añadidas y quitadas). Los predeterminados son `model`,
   `dir`, `git`, `context`, `mood`.
-- **`at`**: la columna donde empieza el personaje, para correrlo a la derecha.
-  `0` lo pone justo después del texto; `70` o `90` lo llevan al borde en una
-  terminal ancha.
+- **`at`**: dónde empieza el personaje. `"right"` (lo predeterminado) lo pega
+  al borde derecho de la terminal; `0` lo pone justo después del texto; un
+  número lo fija en esa columna.
 
 ## Qué hacer
 

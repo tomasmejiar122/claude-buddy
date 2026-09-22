@@ -38,7 +38,9 @@ def run(config, payload_extra=None):
         "cost": {"total_lines_added": 120, "total_lines_removed": 35},
     }
     payload.update(payload_extra or {})
-    env = {**os.environ, "USERPROFILE": str(home), "HOME": str(home)}
+    # Claude Code sets COLUMNS to the terminal width; imitate a wide window
+    env = {**os.environ, "USERPROFILE": str(home), "HOME": str(home),
+           "COLUMNS": os.environ.get("SHOT_COLUMNS", "100")}
     out = subprocess.run(["node", str(SCRIPT)], input=json.dumps(payload), env=env,
                          capture_output=True, text=True, encoding="utf8")
     return out.stdout.splitlines()
