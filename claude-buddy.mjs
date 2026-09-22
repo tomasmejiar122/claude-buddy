@@ -145,9 +145,9 @@ function saveState() {
     try { fs.writeFileSync(stateFile, JSON.stringify(state)); } catch { }
 }
 
-// A 13-row grid of letters ('.' = transparent) becomes terminal rows.
-//   mini   only the head, 4 rows
-//   normal the whole character, 7 rows: '▀' per cell, fg = top pixel,
+// A letter grid ('.' = transparent) becomes terminal rows.
+//   mini   the 8x8 version of the character, 4 rows
+//   normal the 14x13 one, 7 rows: '▀' per cell, fg = top pixel,
 //          bg = bottom pixel, with a blank pixel row on top
 //   grande one row per pixel row and two columns per pixel, 13 rows
 const SIZES = { mini: 'mini', normal: 'normal', grande: 'grande' };
@@ -160,17 +160,99 @@ function render(grid, pal, size = 'normal') {
             return s;
         });
     }
-    const canvas = size === 'mini' ? grid.slice(0, 8) : ['.'.repeat(14), ...grid];
+    const canvas = size === 'mini' ? [...grid] : ['.'.repeat(grid[0].length), ...grid];
+    if (canvas.length % 2) canvas.push('.'.repeat(canvas[0].length));
     const rows = [];
     for (let l = 0; l < canvas.length / 2; l++) {
         const top = canvas[2 * l], bot = canvas[2 * l + 1];
         let s = '';
-        for (let c = 0; c < 14; c++) {
+        for (let c = 0; c < top.length; c++) {
             const t = top[c], b = bot[c];
             if (t === '.' && b === '.') s += `${reset} `;
             else if (b === '.') s += `${reset}${ESC}[38;2;${rgb(pal[t])}m▀`;
             else if (t === '.') s += `${reset}${ESC}[38;2;${rgb(pal[b])}m▄`;
             else s += `${ESC}[38;2;${rgb(pal[t])};48;2;${rgb(pal[b])}m▀`;
+        }
+        rows.push(s);
+    }
+    return rows;
+}
+
+// ---- pixel text: the clock and phrases ----
+
+// 3x5 pixel font, one string per row
+const FONT = {
+    '0': '###,#.#,#.#,#.#,###', '1': '.#.,##.,.#.,.#.,###', '2': '###,..#,###,#..,###',
+    '3': '###,..#,.##,..#,###', '4': '#.#,#.#,###,..#,..#', '5': '###,#..,###,..#,###',
+    '6': '###,#..,###,#.#,###', '7': '###,..#,..#,..#,..#', '8': '###,#.#,###,#.#,###',
+    '9': '###,#.#,###,..#,###', ':': '...,.#.,...,.#.,...', '.': '...,...,...,...,.#.',
+    ',': '...,...,...,.#.,#..', '!': '.#.,.#.,.#.,...,.#.', '?': '###,..#,.##,...,.#.',
+    '-': '...,...,###,...,...', "'": '.#.,.#.,...,...,...', '/': '..#,..#,.#.,#..,#..',
+    '+': '...,.#.,###,.#.,...', '*': '#.#,.#.,#.#,...,...', '%': '#.#,..#,.#.,#..,#.#',
+    'A': '###,#.#,###,#.#,#.#', 'B': '##.,#.#,##.,#.#,##.', 'C': '###,#..,#..,#..,###',
+    'D': '##.,#.#,#.#,#.#,##.', 'E': '###,#..,##.,#..,###', 'F': '###,#..,##.,#..,#..',
+    'G': '###,#..,#.#,#.#,###', 'H': '#.#,#.#,###,#.#,#.#', 'I': '###,.#.,.#.,.#.,###',
+    'J': '..#,..#,..#,#.#,###', 'K': '#.#,#.#,##.,#.#,#.#', 'L': '#..,#..,#..,#..,###',
+    'M': '#.#,###,###,#.#,#.#', 'N': '#.#,##.,#.#,#.#,#.#', 'O': '###,#.#,#.#,#.#,###',
+    'P': '###,#.#,###,#..,#..', 'Q': '###,#.#,#.#,###,..#', 'R': '###,#.#,##.,#.#,#.#',
+    'S': '###,#..,###,..#,###', 'T': '###,.#.,.#.,.#.,.#.', 'U': '#.#,#.#,#.#,#.#,###',
+    'V': '#.#,#.#,#.#,#.#,.#.', 'W': '#.#,#.#,###,###,#.#', 'X': '#.#,#.#,.#.,#.#,#.#',
+    'Y': '#.#,#.#,.#.,.#.,.#.', 'Z': '###,..#,.#.,#..,###',
+    'Á': '###,#.#,###,#.#,#.#', 'É': '###,#..,##.,#..,###', 'Í': '###,.#.,.#.,.#.,###',
+    'Ó': '###,#.#,#.#,#.#,###', 'Ú': '#.#,#.#,#.#,#.#,###', 'Ñ': '###,#.#,##.,###,#.#',
+};
+
+// A string becomes a pixel grid 5 rows tall, one blank column between letters
+function textGrid(text) {
+    const rows = ['', '', '', '', ''];
+    for (const ch of text.toUpperCase()) {
+        const glyph = FONT[ch];
+        if (!glyph) { for (let i = 0; i < 5; i++) rows[i] += '..'; continue; }
+        const parts = glyph.split(',');
+        for (let i = 0; i < 5; i++) rows[i] += parts[i] + '.';
+    }
+    return rows;
+}
+
+// Colors across the text: a gradient, a rainbow, the context color or a fixed one
+function textColorAt(style, x, width) {
+    const t = width > 1 ? x / (width - 1) : 0;
+    if (style === 'arcoiris') return hueRgb((t * 300 + frame * 12) % 360);
+    if (style === 'contexto') return pct >= 80 ? [255, 90, 90] : pct >= 50 ? [255, 200, 90] : [120, 230, 140];
+    if (Array.isArray(style)) return style;
+    const a = [139, 123, 245], b = [192, 105, 207];  // brand gradient
+    return a.map((v, i) => Math.round(v + (b[i] - v) * t));
+}
+
+function hueRgb(hue) {
+    const h = ((hue % 360) + 360) % 360 / 60, s = 0.5;
+    const x = 1 - s * (1 - Math.abs((h % 2) - 1)), m = 1 - s;
+    const c = [[1, x, m], [x, 1, m], [m, 1, x], [m, x, 1], [x, m, 1], [1, m, x]][Math.floor(h)];
+    return c.map((v) => Math.round(v * 255));
+}
+
+// Draw a pixel grid ('#' = on) scaled up, as terminal rows
+function renderPixels(grid, style, scale) {
+    const width = grid[0].length;
+    const big = [];
+    for (const row of grid) {
+        let line = '';
+        for (const ch of row) line += ch.repeat(scale);
+        for (let i = 0; i < scale; i++) big.push(line);
+    }
+    if (big.length % 2) big.push('.'.repeat(width * scale));
+    const rgb = (c) => `${c[0]};${c[1]};${c[2]}`;
+    const rows = [];
+    for (let l = 0; l < big.length / 2; l++) {
+        const top = big[2 * l], bot = big[2 * l + 1];
+        let s = '';
+        for (let c = 0; c < top.length; c++) {
+            const col = rgb(textColorAt(style, c, top.length));
+            const t = top[c] === '#', b = bot[c] === '#';
+            if (!t && !b) s += `${reset} `;
+            else if (!b) s += `${reset}${ESC}[38;2;${col}m▀`;
+            else if (!t) s += `${reset}${ESC}[38;2;${col}m▄`;
+            else s += `${ESC}[38;2;${col};48;2;${col}m▀`;
         }
         rows.push(s);
     }
@@ -218,10 +300,14 @@ function settingsFor(cfg) {
         character: entry.character || cfg.character || fallback,
         size: SIZES[entry.size || cfg.size] || 'normal',
         segments: entry.segments || cfg.segments || DEFAULT_SEGMENTS,
+        // what goes on the right: any of "character", "clock", "text"
+        show: [].concat(entry.show || cfg.show || ['character']),
+        text: entry.text || cfg.text || '',
+        color: entry.color || cfg.color || 'degradado',
     };
 }
 
-const BUDDIES = /*BUDDIES*/{"marciano": {"label": "Marciano","colors": {"S": [255,240,150],"G": [70,170,70],"L": [140,230,110],"D": [50,130,55],"K": [12,16,12],"W": [255,255,255],"M": [30,70,30],"Y": [255,220,80]},"poses": {"normal": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.",".GLKWKLLKWKLG.",".GLKKKLLKKKLG.","..GLLLMMLLLG..","...GGLLLLGG...",".GGDLLLLLLDGG.",".G.DLLLLLLD.G.","...DDLLLLDD...","...DD....DD..."],"blink": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.",".GLGGGLLGGGLG.",".GLGGGLLGGGLG.","..GLLLMMLLLG..","...GGLLLLGG...",".GGDLLLLLLDGG.",".G.DLLLLLLD.G.","...DDLLLLDD...","...DD....DD..."],"wave": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.",".GLKWKLLKWKLGG",".GLKKKLLKKKLGG","..GLLLMMLLLG.G","...GGLLLLGG..G",".GGDLLLLLLDG..",".G.DLLLLLLD...","...DDLLLLDD...","...DD....DD..."],"cheer": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.","GGLKWKLLKWKLGG","GGLKKKLLKKKLGG","G.GLLLMMLLLG.G","G..GGLLLLGG..G","..GDLLLLLLDG..","...DLLLLLLD...","...DDLLLLDD...","...DD....DD..."],"cheer2": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.","GGLKWKLLKWKLGG","GGLKKKLLKKKLGG","G.GLLLMMLLLG.G","G..GGLLLLGG..G","..GDLLLLLLDG..","...DLLLLLLD...","...DDLLLLDD...","...DD....DD..."]}},"gato": {"label": "Gato","colors": {"S": [255,240,150],"O": [120,60,20],"B": [245,150,60],"A": [255,190,170],"C": [255,225,190],"K": [20,12,8],"W": [240,240,240],"N": [240,110,130],"M": [120,60,20],"T": [245,150,60]},"poses": {"normal": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBKWBBBBKWBO.","WOBKKBBBBKKBOW",".OBBBBNNBBBBO.","W.OBBMBBMBBO.W",".BOBCCCCCCBOB.",".O.OCCCCCCO.O.","...OBBBBBBO..T","...OO....OOTT."],"blink": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBBBBBBBBBBO.","WOBBBBBBBBBBOW",".OBBBBNNBBBBO.","W.OBBMBBMBBO.W",".BOBCCCCCCBOB.",".O.OCCCCCCO.O.","...OBBBBBBO..T","...OO....OOTT."],"wave": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBKWBBBBKWBOB","WOBKKBBBBKKBOB",".OBBBBNNBBBBOB","W.OBBMBBMBBO.B",".BOBCCCCCCBO..",".O.OCCCCCCO...","...OBBBBBBO..T","...OO....OOTT."],"cheer": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.","BOBKWBBBBKWBOB","BOBKKBBBBKKBOB","BOBBBBNNBBBBOB","B.OBBMBBMBBO.B","..OBCCCCCCBO..","...OCCCCCCO...","...OBBBBBBO..T","...OO....OOTT."],"cheer2": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.","BOBKWBBBBKWBOB","BOBKKBBBBKKBOB","BOBBBBNNBBBBOB","B.OBBMBBMBBO.B","..OBCCCCCCBO..","...OCCCCCCO...","...OBBBBBBO..T","...OO....OOTT."]}},"perro": {"label": "Perro","colors": {"S": [255,240,150],"O": [80,50,25],"B": [200,140,80],"E": [120,75,40],"C": [245,225,195],"K": [20,12,8],"W": [255,255,255],"N": [30,20,20],"M": [90,40,40],"T": [240,100,120]},"poses": {"normal": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","EEEBKKBBKKBEEE",".EEBBCCCCBBEE.","..OBCCNNCCBO..","...OCMMMMCO...",".BOBBCTTCBBOB.",".O.OBBBBBBO.O.","...OBBBBBBO...","...OO....OO..."],"blink": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBBBBBBBBEEE","EEEBBBBBBBBEEE",".EEBBCCCCBBEE.","..OBCCNNCCBO..","...OCMMMMCO...",".BOBBCTTCBBOB.",".O.OBBBBBBO.O.","...OBBBBBBO...","...OO....OO..."],"wave": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","EEEBKKBBKKBEEB",".EEBBCCCCBBEEB","..OBCCNNCCBO.B","...OCMMMMCO..B",".BOBBCTTCBBO..",".O.OBBBBBBO...","...OBBBBBBO...","...OO....OO..."],"cheer": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","BEEBKKBBKKBEEB","BEEBBCCCCBBEEB","B.OBCCNNCCBO.B","B..OCMMMMCO..B","..OBBCTTCBBO..","...OBBBBBBO...","...OBBBBBBO...","...OO....OO..."],"cheer2": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","BEEBKKBBKKBEEB","BEEBBCCCCBBEEB","B.OBCCNNCCBO.B","B..OCMMMMCO..B","..OBBCTTCBBO..","...OBBBBBBO...","...OBBBBBBO...","...OO....OO..."]}},"robot": {"label": "Robot","colors": {"S": [255,240,150],"O": [60,65,80],"G": [175,185,200],"D": [120,130,150],"K": [20,24,34],"C": [80,230,255],"R": [255,80,90],"M": [90,100,120]},"poses": {"normal": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.",".OGKCCKKCCKGO.",".OGKKKKKKKKGO.","..OGGMMMMGGO..","...OOOOOOOO...",".GOGGDRRDGGOG.",".O.OGDDDDGO.O.","...OGGGGGGO...","...OO....OO..."],"blink": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.",".OGKKKKKKKKGO.",".OGKKKKKKKKGO.","..OGGMMMMGGO..","...OOOOOOOO...",".GOGGDRRDGGOG.",".O.OGDDDDGO.O.","...OGGGGGGO...","...OO....OO..."],"wave": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.",".OGKCCKKCCKGOG",".OGKKKKKKKKGOG","..OGGMMMMGGO.G","...OOOOOOOO..G",".GOGGDRRDGGO..",".O.OGDDDDGO...","...OGGGGGGO...","...OO....OO..."],"cheer": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.","GOGKCCKKCCKGOG","GOGKKKKKKKKGOG","G.OGGMMMMGGO.G","G..OOOOOOOO..G","..OGGDRRDGGO..","...OGDDDDGO...","...OGGGGGGO...","...OO....OO..."],"cheer2": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.","GOGKCCKKCCKGOG","GOGKKKKKKKKGOG","G.OGGMMMMGGO.G","G..OOOOOOOO..G","..OGGDRRDGGO..","...OGDDDDGO...","...OGGGGGGO...","...OO....OO..."]}},"fantasma": {"label": "Fantasma","colors": {"S": [255,240,150],"O": [150,150,200],"W": [240,240,255],"K": [40,40,70],"M": [60,60,100],"P": [255,170,200]},"poses": {"normal": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.",".OWWKKWWKKWWO.",".OWWWWWWWWWWO.",".OWWWPMMPWWWO.",".OWWWWMMWWWWO.","WOWWWWWWWWWWOW",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"blink": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWWPMMPWWWO.",".OWWWWMMWWWWO.","WOWWWWWWWWWWOW",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"wave": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.",".OWWKKWWKKWWOW",".OWWWWWWWWWWOW",".OWWWPMMPWWWOW",".OWWWWMMWWWWOW","WOWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"cheer": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.","WOWWKKWWKKWWOW","WOWWWWWWWWWWOW","WOWWWPMMPWWWOW","WOWWWWMMWWWWOW",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"cheer2": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.","WOWWKKWWKKWWOW","WOWWWWWWWWWWOW","WOWWWPMMPWWWOW","WOWWWWMMWWWWOW",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."]}},"rana": {"label": "Rana","colors": {"S": [255,240,150],"O": [30,90,40],"G": [90,190,80],"L": [200,235,150],"K": [15,20,15],"W": [250,250,240],"M": [40,100,45]},"poses": {"normal": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","OGGGGGGGGGGGGO","OGMGGGGGGGGMGO",".OGMMMMMMMMGO.","..OGGGGGGGGO..",".GOGLLLLLLGOG.",".O.OLLLLLLO.O.","..OOGGGGGGOO..",".OOO......OOO."],"blink": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWGGO..OGGWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","OGGGGGGGGGGGGO","OGMGGGGGGGGMGO",".OGMMMMMMMMGO.","..OGGGGGGGGO..",".GOGLLLLLLGOG.",".O.OLLLLLLO.O.","..OOGGGGGGOO..",".OOO......OOO."],"wave": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","OGGGGGGGGGGGGG","OGMGGGGGGGGMGG",".OGMMMMMMMMGOG","..OGGGGGGGGO.G",".GOGLLLLLLGO..",".O.OLLLLLLO...","..OOGGGGGGOO..",".OOO......OOO."],"cheer": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","GGGGGGGGGGGGGG","GGMGGGGGGGGMGG","GOGMMMMMMMMGOG","G.OGGGGGGGGO.G","..OGLLLLLLGO..","...OLLLLLLO...","..OOGGGGGGOO..",".OOO......OOO."],"cheer2": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","GGGGGGGGGGGGGG","GGMGGGGGGGGMGG","GOGMMMMMMMMGOG","G.OGGGGGGGGO.G","..OGLLLLLLGO..","...OLLLLLLO...","..OOGGGGGGOO..",".OOO......OOO."]}},"pinguino": {"label": "Pingüino","colors": {"S": [255,240,150],"O": [20,24,40],"K": [50,58,90],"W": [245,245,250],"Y": [255,170,40],"E": [8,10,18]},"poses": {"normal": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","..OKWWKKWWKO..","..OKWEKKWEKO..",".OKKKKYYKKKKO.",".OKWWWYYWWWKO.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"blink": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","..OKKKKKKKKO..","..OKKKKKKKKO..",".OKKKKYYKKKKO.",".OKWWWYYWWWKO.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"wave": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","..OKWWKKWWKOKK","..OKWEKKWEKO.K",".OKKKKYYKKKKOK",".OKWWWYYWWWKOK",".KOWWWWWWWWO..",".KOWWWWWWWWO..",".KOWWWWWWWWO..","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"cheer": ["....OOOOOO....","...OKKKKKKO...",".SOKKKKKKKKOS.","KKOKWWKKWWKOKK","K.OKWEKKWEKO.K","KOKKKKYYKKKKOK","KOKWWWYYWWWKOK","..OWWWWWWWWO..","..OWWWWWWWWO..","..OWWWWWWWWO..","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"cheer2": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","KKOKWWKKWWKOKK","K.OKWEKKWEKO.K","KOKKKKYYKKKKOK","KOKWWWYYWWWKOK","..OWWWWWWWWO..","..OWWWWWWWWO..","..OWWWWWWWWO..","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."]}},"panda": {"label": "Panda","colors": {"S": [255,240,150],"O": [95,95,108],"W": [245,245,245],"K": [62,62,74],"M": [200,90,110]},"poses": {"normal": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.",".OWKWKWWKWKWO.",".OWWKWWWWKWWO.","..OWWWKKWWWO..","...OWWMMWWO...",".KKOWWWWWWOKK.",".KK.OWWWWO.KK.","...OWWWWWWO...","...KKK..KKK..."],"blink": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.",".OWKKKWWKKKWO.",".OWWKWWWWKWWO.","..OWWWKKWWWO..","...OWWMMWWO...",".KKOWWWWWWOKK.",".KK.OWWWWO.KK.","...OWWWWWWO...","...KKK..KKK..."],"wave": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.",".OWKWKWWKWKWOK",".OWWKWWWWKWWOK","..OWWWKKWWWO.K","...OWWMMWWO..K",".KKOWWWWWWO...",".KK.OWWWWO....","...OWWWWWWO...","...KKK..KKK..."],"cheer": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.","KOWKWKWWKWKWOK","KOWWKWWWWKWWOK","K.OWWWKKWWWO.K","K..OWWMMWWO..K","...OWWWWWWO...","....OWWWWO....","...OWWWWWWO...","...KKK..KKK..."],"cheer2": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.","KOWKWKWWKWKWOK","KOWWKWWWWKWWOK","K.OWWWKKWWWO.K","K..OWWMMWWO..K","...OWWWWWWO...","....OWWWWO....","...OWWWWWWO...","...KKK..KKK..."]}},"buho": {"label": "Búho","colors": {"S": [255,240,150],"O": [70,45,25],"B": [160,110,60],"C": [215,180,130],"W": [250,245,225],"K": [20,15,10],"Y": [255,180,50]},"poses": {"normal": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.",".OWKWBBBBWKWO.",".OWWWBYYBWWWO.",".OBBBBYYBBBBO.",".OBCBCBBCBCBO.","BOBBCBCCBCBBOB","BO.BCBCCBCB.OB","..OBBBBBBBBO..","...YY....YY..."],"blink": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.",".OWBWBBBBWBWO.",".OWWWBYYBWWWO.",".OBBBBYYBBBBO.",".OBCBCBBCBCBO.","BOBBCBCCBCBBOB","BO.BCBCCBCB.OB","..OBBBBBBBBO..","...YY....YY..."],"wave": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.",".OWKWBBBBWKWOB",".OWWWBYYBWWWOB",".OBBBBYYBBBBOB",".OBCBCBBCBCBOB","BOBBCBCCBCBBO.","BO.BCBCCBCB.O.","..OBBBBBBBBO..","...YY....YY..."],"cheer": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.","BOWKWBBBBWKWOB","BOWWWBYYBWWWOB","BOBBBBYYBBBBOB","BOBCBCBBCBCBOB",".OBBCBCCBCBBO.",".O.BCBCCBCB.O.","..OBBBBBBBBO..","...YY....YY..."],"cheer2": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.","BOWKWBBBBWKWOB","BOWWWBYYBWWWOB","BOBBBBYYBBBBOB","BOBCBCBBCBCBOB",".OBBCBCCBCBBO.",".O.BCBCCBCB.O.","..OBBBBBBBBO..","...YY....YY..."]}},"slime": {"label": "Slime","colors": {"S": [255,240,150],"O": [20,120,140],"B": [60,210,220],"L": [150,245,250],"W": [255,255,255],"K": [10,40,50],"M": [20,100,120]},"poses": {"normal": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","...OBLLLLBO...","..OBBBBBBBBO..",".OBBKWBBKWBBO.",".OBBKKBBKKBBO.","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"blink": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","...OBLLLLBO...","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBBBBBBBBBBO.","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"wave": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","...OBLLLLBO.BB","..OBBBBBBBBO.B",".OBBKWBBKWBBOB",".OBBKKBBKKBBOB","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"cheer": ["..............","..............","......OO......",".....OLLO.....",".S..OLLWLO..S.","BB.OBLLLLBO.BB","B.OBBBBBBBBO.B","BOBBKWBBKWBBOB","BOBBKKBBKKBBOB","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"cheer2": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","BB.OBLLLLBO.BB","B.OBBBBBBBBO.B","BOBBKWBBKWBBOB","BOBBKKBBKKBBOB","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."]}}}/*END*/;
+const BUDDIES = /*BUDDIES*/{"marciano": {"label": "Marciano","colors": {"S": [255,240,150],"G": [70,170,70],"L": [140,230,110],"D": [50,130,55],"K": [12,16,12],"W": [255,255,255],"M": [30,70,30],"Y": [255,220,80]},"poses": {"normal": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.",".GLKWKLLKWKLG.",".GLKKKLLKKKLG.","..GLLLMMLLLG..","...GGLLLLGG...",".GGDLLLLLLDGG.",".G.DLLLLLLD.G.","...DDLLLLDD...","...DD....DD..."],"blink": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.",".GLGGGLLGGGLG.",".GLGGGLLGGGLG.","..GLLLMMLLLG..","...GGLLLLGG...",".GGDLLLLLLDGG.",".G.DLLLLLLD.G.","...DDLLLLDD...","...DD....DD..."],"wave": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.",".GLKWKLLKWKLGG",".GLKKKLLKKKLGG","..GLLLMMLLLG.G","...GGLLLLGG..G",".GGDLLLLLLDG..",".G.DLLLLLLD...","...DDLLLLDD...","...DD....DD..."],"cheer": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.","GGLKWKLLKWKLGG","GGLKKKLLKKKLGG","G.GLLLMMLLLG.G","G..GGLLLLGG..G","..GDLLLLLLDG..","...DLLLLLLD...","...DDLLLLDD...","...DD....DD..."],"cheer2": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.","GGLKWKLLKWKLGG","GGLKKKLLKKKLGG","G.GLLLMMLLLG.G","G..GGLLLLGG..G","..GDLLLLLLDG..","...DLLLLLLD...","...DDLLLLDD...","...DD....DD..."]},"mini": [".Y....Y.","..GGGG..",".GLLLLG.",".GKLLKG.",".GLMMLG.",".GLLLLG.","..GLLG..","..G..G.."]},"gato": {"label": "Gato","colors": {"S": [255,240,150],"O": [120,60,20],"B": [245,150,60],"A": [255,190,170],"C": [255,225,190],"K": [20,12,8],"W": [240,240,240],"N": [240,110,130],"M": [120,60,20],"T": [245,150,60]},"poses": {"normal": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBKWBBBBKWBO.","WOBKKBBBBKKBOW",".OBBBBNNBBBBO.","W.OBBMBBMBBO.W",".BOBCCCCCCBOB.",".O.OCCCCCCO.O.","...OBBBBBBO..T","...OO....OOTT."],"blink": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBBBBBBBBBBO.","WOBBBBBBBBBBOW",".OBBBBNNBBBBO.","W.OBBMBBMBBO.W",".BOBCCCCCCBOB.",".O.OCCCCCCO.O.","...OBBBBBBO..T","...OO....OOTT."],"wave": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBKWBBBBKWBOB","WOBKKBBBBKKBOB",".OBBBBNNBBBBOB","W.OBBMBBMBBO.B",".BOBCCCCCCBO..",".O.OCCCCCCO...","...OBBBBBBO..T","...OO....OOTT."],"cheer": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.","BOBKWBBBBKWBOB","BOBKKBBBBKKBOB","BOBBBBNNBBBBOB","B.OBBMBBMBBO.B","..OBCCCCCCBO..","...OCCCCCCO...","...OBBBBBBO..T","...OO....OOTT."],"cheer2": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.","BOBKWBBBBKWBOB","BOBKKBBBBKKBOB","BOBBBBNNBBBBOB","B.OBBMBBMBBO.B","..OBCCCCCCBO..","...OCCCCCCO...","...OBBBBBBO..T","...OO....OOTT."]},"mini": ["O......O","OO....OO",".OBBBBO.",".BKBBKB.",".BBNNBB.",".OCCCCO.",".OCCCCO.","..O..O.."]},"perro": {"label": "Perro","colors": {"S": [255,240,150],"O": [80,50,25],"B": [200,140,80],"E": [120,75,40],"C": [245,225,195],"K": [20,12,8],"W": [255,255,255],"N": [30,20,20],"M": [90,40,40],"T": [240,100,120]},"poses": {"normal": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","EEEBKKBBKKBEEE",".EEBBCCCCBBEE.","..OBCCNNCCBO..","...OCMMMMCO...",".BOBBCTTCBBOB.",".O.OBBBBBBO.O.","...OBBBBBBO...","...OO....OO..."],"blink": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBBBBBBBBEEE","EEEBBBBBBBBEEE",".EEBBCCCCBBEE.","..OBCCNNCCBO..","...OCMMMMCO...",".BOBBCTTCBBOB.",".O.OBBBBBBO.O.","...OBBBBBBO...","...OO....OO..."],"wave": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","EEEBKKBBKKBEEB",".EEBBCCCCBBEEB","..OBCCNNCCBO.B","...OCMMMMCO..B",".BOBBCTTCBBO..",".O.OBBBBBBO...","...OBBBBBBO...","...OO....OO..."],"cheer": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","BEEBKKBBKKBEEB","BEEBBCCCCBBEEB","B.OBCCNNCCBO.B","B..OCMMMMCO..B","..OBBCTTCBBO..","...OBBBBBBO...","...OBBBBBBO...","...OO....OO..."],"cheer2": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","BEEBKKBBKKBEEB","BEEBBCCCCBBEEB","B.OBCCNNCCBO.B","B..OCMMMMCO..B","..OBBCTTCBBO..","...OBBBBBBO...","...OBBBBBBO...","...OO....OO..."]},"mini": ["..BBBB..","EEBBBBEE","EEBKBKBE","EEBCCCBE",".BCTTCB.",".BBBBBB.",".BBBBBB.","..O..O.."]},"robot": {"label": "Robot","colors": {"S": [255,240,150],"O": [60,65,80],"G": [175,185,200],"D": [120,130,150],"K": [20,24,34],"C": [80,230,255],"R": [255,80,90],"M": [90,100,120]},"poses": {"normal": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.",".OGKCCKKCCKGO.",".OGKKKKKKKKGO.","..OGGMMMMGGO..","...OOOOOOOO...",".GOGGDRRDGGOG.",".O.OGDDDDGO.O.","...OGGGGGGO...","...OO....OO..."],"blink": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.",".OGKKKKKKKKGO.",".OGKKKKKKKKGO.","..OGGMMMMGGO..","...OOOOOOOO...",".GOGGDRRDGGOG.",".O.OGDDDDGO.O.","...OGGGGGGO...","...OO....OO..."],"wave": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.",".OGKCCKKCCKGOG",".OGKKKKKKKKGOG","..OGGMMMMGGO.G","...OOOOOOOO..G",".GOGGDRRDGGO..",".O.OGDDDDGO...","...OGGGGGGO...","...OO....OO..."],"cheer": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.","GOGKCCKKCCKGOG","GOGKKKKKKKKGOG","G.OGGMMMMGGO.G","G..OOOOOOOO..G","..OGGDRRDGGO..","...OGDDDDGO...","...OGGGGGGO...","...OO....OO..."],"cheer2": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.","GOGKCCKKCCKGOG","GOGKKKKKKKKGOG","G.OGGMMMMGGO.G","G..OOOOOOOO..G","..OGGDRRDGGO..","...OGDDDDGO...","...OGGGGGGO...","...OO....OO..."]},"mini": ["...RR...","..OOOO..",".OGGGGO.",".GKCCKG.",".OGGGGO.","GOGGGGOG",".OGGGGO.","..O..O.."]},"fantasma": {"label": "Fantasma","colors": {"S": [255,240,150],"O": [150,150,200],"W": [240,240,255],"K": [40,40,70],"M": [60,60,100],"P": [255,170,200]},"poses": {"normal": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.",".OWWKKWWKKWWO.",".OWWWWWWWWWWO.",".OWWWPMMPWWWO.",".OWWWWMMWWWWO.","WOWWWWWWWWWWOW",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"blink": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWWPMMPWWWO.",".OWWWWMMWWWWO.","WOWWWWWWWWWWOW",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"wave": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.",".OWWKKWWKKWWOW",".OWWWWWWWWWWOW",".OWWWPMMPWWWOW",".OWWWWMMWWWWOW","WOWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"cheer": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.","WOWWKKWWKKWWOW","WOWWWWWWWWWWOW","WOWWWPMMPWWWOW","WOWWWWMMWWWWOW",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"cheer2": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.","WOWWKKWWKKWWOW","WOWWWWWWWWWWOW","WOWWWPMMPWWWOW","WOWWWWMMWWWWOW",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."]},"mini": ["..WWWW..",".WWWWWW.",".WKWWKW.",".WWWWWW.",".WWMMWW.",".WWWWWW.",".WWWWWW.",".W.WW.W."]},"rana": {"label": "Rana","colors": {"S": [255,240,150],"O": [30,90,40],"G": [90,190,80],"L": [200,235,150],"K": [15,20,15],"W": [250,250,240],"M": [40,100,45]},"poses": {"normal": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","OGGGGGGGGGGGGO","OGMGGGGGGGGMGO",".OGMMMMMMMMGO.","..OGGGGGGGGO..",".GOGLLLLLLGOG.",".O.OLLLLLLO.O.","..OOGGGGGGOO..",".OOO......OOO."],"blink": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWGGO..OGGWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","OGGGGGGGGGGGGO","OGMGGGGGGGGMGO",".OGMMMMMMMMGO.","..OGGGGGGGGO..",".GOGLLLLLLGOG.",".O.OLLLLLLO.O.","..OOGGGGGGOO..",".OOO......OOO."],"wave": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","OGGGGGGGGGGGGG","OGMGGGGGGGGMGG",".OGMMMMMMMMGOG","..OGGGGGGGGO.G",".GOGLLLLLLGO..",".O.OLLLLLLO...","..OOGGGGGGOO..",".OOO......OOO."],"cheer": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","GGGGGGGGGGGGGG","GGMGGGGGGGGMGG","GOGMMMMMMMMGOG","G.OGGGGGGGGO.G","..OGLLLLLLGO..","...OLLLLLLO...","..OOGGGGGGOO..",".OOO......OOO."],"cheer2": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","GGGGGGGGGGGGGG","GGMGGGGGGGGMGG","GOGMMMMMMMMGOG","G.OGGGGGGGGO.G","..OGLLLLLLGO..","...OLLLLLLO...","..OOGGGGGGOO..",".OOO......OOO."]},"mini": [".WW..WW.",".WK..KW.",".GGGGGG.","GGGGGGGG","GMMMMMMG",".GLLLLG.",".GLLLLG.","GG....GG"]},"pinguino": {"label": "Pingüino","colors": {"S": [255,240,150],"O": [20,24,40],"K": [50,58,90],"W": [245,245,250],"Y": [255,170,40],"E": [8,10,18]},"poses": {"normal": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","..OKWWKKWWKO..","..OKWEKKWEKO..",".OKKKKYYKKKKO.",".OKWWWYYWWWKO.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"blink": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","..OKKKKKKKKO..","..OKKKKKKKKO..",".OKKKKYYKKKKO.",".OKWWWYYWWWKO.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"wave": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","..OKWWKKWWKOKK","..OKWEKKWEKO.K",".OKKKKYYKKKKOK",".OKWWWYYWWWKOK",".KOWWWWWWWWO..",".KOWWWWWWWWO..",".KOWWWWWWWWO..","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"cheer": ["....OOOOOO....","...OKKKKKKO...",".SOKKKKKKKKOS.","KKOKWWKKWWKOKK","K.OKWEKKWEKO.K","KOKKKKYYKKKKOK","KOKWWWYYWWWKOK","..OWWWWWWWWO..","..OWWWWWWWWO..","..OWWWWWWWWO..","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"cheer2": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","KKOKWWKKWWKOKK","K.OKWEKKWEKO.K","KOKKKKYYKKKKOK","KOKWWWYYWWWKOK","..OWWWWWWWWO..","..OWWWWWWWWO..","..OWWWWWWWWO..","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."]},"mini": ["..KKKK..",".KKKKKK.",".KWKKWK.",".KKYYKK.","KKWWWWKK","K.WWWW.K",".KWWWWK.",".YY..YY."]},"panda": {"label": "Panda","colors": {"S": [255,240,150],"O": [95,95,108],"W": [245,245,245],"K": [62,62,74],"M": [200,90,110]},"poses": {"normal": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.",".OWKWKWWKWKWO.",".OWWKWWWWKWWO.","..OWWWKKWWWO..","...OWWMMWWO...",".KKOWWWWWWOKK.",".KK.OWWWWO.KK.","...OWWWWWWO...","...KKK..KKK..."],"blink": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.",".OWKKKWWKKKWO.",".OWWKWWWWKWWO.","..OWWWKKWWWO..","...OWWMMWWO...",".KKOWWWWWWOKK.",".KK.OWWWWO.KK.","...OWWWWWWO...","...KKK..KKK..."],"wave": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.",".OWKWKWWKWKWOK",".OWWKWWWWKWWOK","..OWWWKKWWWO.K","...OWWMMWWO..K",".KKOWWWWWWO...",".KK.OWWWWO....","...OWWWWWWO...","...KKK..KKK..."],"cheer": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.","KOWKWKWWKWKWOK","KOWWKWWWWKWWOK","K.OWWWKKWWWO.K","K..OWWMMWWO..K","...OWWWWWWO...","....OWWWWO....","...OWWWWWWO...","...KKK..KKK..."],"cheer2": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.","KOWKWKWWKWKWOK","KOWWKWWWWKWWOK","K.OWWWKKWWWO.K","K..OWWMMWWO..K","...OWWWWWWO...","....OWWWWO....","...OWWWWWWO...","...KKK..KKK..."]},"mini": ["KK....KK","KWWWWWWK",".WWWWWW.",".WKWWKW.",".WWMMWW.","KWWWWWWK",".WWWWWW.",".KK..KK."]},"buho": {"label": "Búho","colors": {"S": [255,240,150],"O": [70,45,25],"B": [160,110,60],"C": [215,180,130],"W": [250,245,225],"K": [20,15,10],"Y": [255,180,50]},"poses": {"normal": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.",".OWKWBBBBWKWO.",".OWWWBYYBWWWO.",".OBBBBYYBBBBO.",".OBCBCBBCBCBO.","BOBBCBCCBCBBOB","BO.BCBCCBCB.OB","..OBBBBBBBBO..","...YY....YY..."],"blink": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.",".OWBWBBBBWBWO.",".OWWWBYYBWWWO.",".OBBBBYYBBBBO.",".OBCBCBBCBCBO.","BOBBCBCCBCBBOB","BO.BCBCCBCB.OB","..OBBBBBBBBO..","...YY....YY..."],"wave": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.",".OWKWBBBBWKWOB",".OWWWBYYBWWWOB",".OBBBBYYBBBBOB",".OBCBCBBCBCBOB","BOBBCBCCBCBBO.","BO.BCBCCBCB.O.","..OBBBBBBBBO..","...YY....YY..."],"cheer": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.","BOWKWBBBBWKWOB","BOWWWBYYBWWWOB","BOBBBBYYBBBBOB","BOBCBCBBCBCBOB",".OBBCBCCBCBBO.",".O.BCBCCBCB.O.","..OBBBBBBBBO..","...YY....YY..."],"cheer2": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.","BOWKWBBBBWKWOB","BOWWWBYYBWWWOB","BOBBBBYYBBBBOB","BOBCBCBBCBCBOB",".OBBCBCCBCBBO.",".O.BCBCCBCB.O.","..OBBBBBBBBO..","...YY....YY..."]},"mini": ["O......O","OO....OO",".BBBBBB.",".WKWWKW.",".BBYYBB.",".BCBBCB.",".BCCCCB.","..Y..Y.."]},"slime": {"label": "Slime","colors": {"S": [255,240,150],"O": [20,120,140],"B": [60,210,220],"L": [150,245,250],"W": [255,255,255],"K": [10,40,50],"M": [20,100,120]},"poses": {"normal": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","...OBLLLLBO...","..OBBBBBBBBO..",".OBBKWBBKWBBO.",".OBBKKBBKKBBO.","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"blink": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","...OBLLLLBO...","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBBBBBBBBBBO.","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"wave": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","...OBLLLLBO.BB","..OBBBBBBBBO.B",".OBBKWBBKWBBOB",".OBBKKBBKKBBOB","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"cheer": ["..............","..............","......OO......",".....OLLO.....",".S..OLLWLO..S.","BB.OBLLLLBO.BB","B.OBBBBBBBBO.B","BOBBKWBBKWBBOB","BOBBKKBBKKBBOB","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"cheer2": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","BB.OBLLLLBO.BB","B.OBBBBBBBBO.B","BOBBKWBBKWBBOB","BOBBKKBBKKBBOB","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."]},"mini": ["...LL...","..LLLL..",".BBLLBB.",".BBBBBB.","BKWBBWKB","BBBBBBBB","BBBBBBBB","OOOOOOOO"]}}/*END*/;
 
 const settings = settingsFor(readConfig());
 let who = settings.character;
@@ -260,7 +346,16 @@ if (working) {
     state.left -= 1;
 }
 
-if (who === 'mr') {
+function characterRows() {
+    if (who !== 'mr') {
+        const b = BUDDIES[who];
+        const colors = tire(b.colors, ['K', 'W']);
+        if (settings.size === 'mini' && b.mini) return render(b.mini, colors, 'mini');
+        let p = pose;
+        if (p === 'look' || p === 'cross') p = 'normal';
+        if (blink) p = 'blink';
+        return render(b.poses[p], colors, settings.size);
+    }
     // 14x13 pixel poses. L highlight, P body, E shade, K glasses frame,
     // O pupil, W glint, M mouth, R tongue, S sparkle, B sweat
     const head = [
@@ -331,12 +426,50 @@ if (who === 'mr') {
         pal.E = pal.P.map((v) => Math.round(v * 0.62));
     }
     const colors = working ? pal : tire(pal, ['K', 'O', 'W', 'M', 'B']);
-    writeRows(render(grid, colors, settings.size), settings.segments);
-} else {
-    const b = BUDDIES[who];
-    if (pose === 'look' || pose === 'cross') pose = 'normal';
-    if (blink) pose = 'blink';
-    writeRows(render(b.poses[pose], tire(b.colors, ['K', 'W']), settings.size), settings.segments);
+    if (settings.size === 'mini') {
+        const mini = [
+            '..LLLL..',
+            '.LLLLLL.',
+            '.KKKKKK.',
+            '.KWKKWK.',
+            '.PMMMMP.',
+            '.PLLLLP.',
+            '.PLLLLP.',
+            '.EE..EE.',
+        ];
+        return render(mini, colors, 'mini');
+    }
+    return render(grid, colors, settings.size);
 }
+
+// ---- what goes on the right: the character, a pixel clock, a pixel phrase ----
+
+const COLORS = { degradado: 'degradado', arcoiris: 'arcoiris', contexto: 'contexto' };
+const textScale = { mini: 1, normal: 2, grande: 3 }[settings.size];
+const blocks = [];
+for (const what of settings.show) {
+    if (what === 'character') blocks.push(characterRows());
+    else if (what === 'clock') {
+        const d = new Date();
+        const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        blocks.push(renderPixels(textGrid(hhmm), COLORS[settings.color] || settings.color, textScale));
+    } else if (what === 'text' && settings.text) {
+        blocks.push(renderPixels(textGrid(settings.text), COLORS[settings.color] || settings.color, textScale));
+    }
+}
+if (!blocks.length) blocks.push(['']);
+
+// Side by side, vertically centered
+const height = Math.max(...blocks.map((b) => b.length));
+const rows = [];
+for (let i = 0; i < height; i++) {
+    const parts = blocks.map((b) => {
+        const top = Math.floor((height - b.length) / 2);
+        const row = b[i - top];
+        return row === undefined ? ' '.repeat(visible(b[0] || '')) : row;
+    });
+    rows.push(parts.join(`${reset}  `));
+}
+writeRows(rows, settings.segments);
 
 saveState();

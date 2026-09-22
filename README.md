@@ -16,20 +16,24 @@ Con `auto`, el personaje se elige a partir del nombre de la carpeta, así que ca
 
 ## El comando `/buddy`
 
-Sin argumentos abre menús para elegir personaje, tamaño y extras; con argumentos aplica el cambio directo:
+Sin argumentos abre menús: primero qué va a la derecha (personaje, reloj, frase), luego el tamaño y los datos. Con argumentos aplica el cambio directo:
 
 ```
 /buddy                     abre los menús
 /buddy gato                cambia el personaje de esta carpeta
 /buddy panda mini          personaje y tamaño a la vez
-/buddy grande              solo el tamaño
+/buddy reloj               un reloj en pixel art
+/buddy frase "think ai"    una frase en pixel art
+/buddy color arcoiris      el color del reloj y las frases
 /buddy segments model dir git context clock
 /buddy reset               vuelve a lo predeterminado
 ```
 
 Todo se guarda por carpeta (y cubre lo que haya dentro) en `~/.claude/claude-buddy.json`.
 
-**Tamaños:** `mini` (4 líneas, solo la cabeza), `normal` (7 líneas), `grande` (13 líneas).
+**Tamaños:** `mini` (4 líneas, con una versión 8×8 del personaje), `normal` (7 líneas), `grande` (13 líneas).
+
+**Reloj y frases en pixel art**, solos o junto al personaje, con los colores de tu marca, en arcoíris o según lo lleno que esté el contexto.
 
 **Segmentos**, en el orden que los escribas: `model`, `dir`, `git`, `context`, `mood`, `clock`, `session` (duración de la sesión) y `lines` (líneas añadidas y quitadas por Claude). Se acomodan solos en varias líneas.
 

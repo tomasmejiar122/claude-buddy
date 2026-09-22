@@ -15,7 +15,7 @@ OUT = Path(__file__).parent / "preview"
 BUDDIES = {}
 
 
-def buddy(name, label, rows, colors, eyes, lid, arm, armc, sparkle='S'):
+def buddy(name, label, rows, colors, eyes, lid, arm, armc, sparkle='S', mini=None):
     """Register a buddy.
 
     eyes:  (row, col) pixels that close when blinking
@@ -28,8 +28,10 @@ def buddy(name, label, rows, colors, eyes, lid, arm, armc, sparkle='S'):
     for i, r in enumerate(rows):
         assert len(r) == W, (name, i, len(r), r)
     colors = {'S': (255, 240, 150), **colors}
+    if mini:
+        assert len(mini) == 8 and all(len(r) == 8 for r in mini), (name, 'mini 8x8')
     BUDDIES[name] = dict(label=label, rows=rows, colors=colors, eyes=eyes, lid=lid,
-                         arm=arm, armc=armc, sparkle=sparkle)
+                         arm=arm, armc=armc, sparkle=sparkle, mini=mini)
 
 
 def put(g, r, c, ch):
@@ -102,13 +104,17 @@ def render_sheets():
     for name in names:
         b = BUDDIES[name]
         p = poses(b)
-        img = Image.new("RGB", (30 + 4 * (W * s + 30), H * s + 70), bg)
+        img = Image.new("RGB", (30 + 5 * (W * s + 30), H * s + 70), bg)
         d = ImageDraw.Draw(img)
         d.text((30, 10), b['label'], fill=(230, 230, 230))
         for k, pose in enumerate(('normal', 'blink', 'wave', 'cheer')):
             x = 30 + k * (W * s + 30)
             draw_grid(img, p[pose], b['colors'], x, 35, s)
             d.text((x, 35 + H * s + 8), pose, fill=(150, 150, 160))
+        if b.get('mini'):  # the 8x8 version, drawn next to the poses
+            x = 30 + 4 * (W * s + 30)
+            draw_grid(img, [list(r) for r in b['mini']], b['colors'], x, 35, s)
+            d.text((x, 35 + H * s + 8), 'mini', fill=(150, 150, 160))
         img.save(OUT / f"{name}.png")
     # overview: everyone in the normal pose
     cols = 5
@@ -350,8 +356,40 @@ def export_js():
             'label': b['label'],
             'colors': {k: list(v) for k, v in b['colors'].items()},
             'poses': {k: [''.join(r) for r in g] for k, g in p.items()},
+            'mini': b.get('mini'),
         }
     print(json.dumps(out, ensure_ascii=False, indent=0).replace('\n', ''))
+
+
+# ---------------------------------------------------------------------------
+# Mini versions: 8x8, for the "mini" size (4 terminal lines)
+# ---------------------------------------------------------------------------
+
+MINIS = {
+    'marciano': ['.Y....Y.', '..GGGG..', '.GLLLLG.', '.GKLLKG.',
+                 '.GLMMLG.', '.GLLLLG.', '..GLLG..', '..G..G..'],
+    'gato': ['O......O', 'OO....OO', '.OBBBBO.', '.BKBBKB.',
+             '.BBNNBB.', '.OCCCCO.', '.OCCCCO.', '..O..O..'],
+    'perro': ['..BBBB..', 'EEBBBBEE', 'EEBKBKBE', 'EEBCCCBE',
+              '.BCTTCB.', '.BBBBBB.', '.BBBBBB.', '..O..O..'],
+    'robot': ['...RR...', '..OOOO..', '.OGGGGO.', '.GKCCKG.',
+              '.OGGGGO.', 'GOGGGGOG', '.OGGGGO.', '..O..O..'],
+    'fantasma': ['..WWWW..', '.WWWWWW.', '.WKWWKW.', '.WWWWWW.',
+                 '.WWMMWW.', '.WWWWWW.', '.WWWWWW.', '.W.WW.W.'],
+    'rana': ['.WW..WW.', '.WK..KW.', '.GGGGGG.', 'GGGGGGGG',
+             'GMMMMMMG', '.GLLLLG.', '.GLLLLG.', 'GG....GG'],
+    'pinguino': ['..KKKK..', '.KKKKKK.', '.KWKKWK.', '.KKYYKK.',
+                 'KKWWWWKK', 'K.WWWW.K', '.KWWWWK.', '.YY..YY.'],
+    'panda': ['KK....KK', 'KWWWWWWK', '.WWWWWW.', '.WKWWKW.',
+              '.WWMMWW.', 'KWWWWWWK', '.WWWWWW.', '.KK..KK.'],
+    'buho': ['O......O', 'OO....OO', '.BBBBBB.', '.WKWWKW.',
+             '.BBYYBB.', '.BCBBCB.', '.BCCCCB.', '..Y..Y..'],
+    'slime': ['...LL...', '..LLLL..', '.BBLLBB.', '.BBBBBB.',
+              'BKWBBWKB', 'BBBBBBBB', 'BBBBBBBB', 'OOOOOOOO'],
+}
+for _name, _mini in MINIS.items():
+    assert len(_mini) == 8 and all(len(r) == 8 for r in _mini), _name
+    BUDDIES[_name]['mini'] = _mini
 
 
 if __name__ == "__main__":
