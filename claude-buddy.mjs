@@ -1,16 +1,20 @@
 // claude-buddy — https://github.com/tomasmejiar122/claude-buddy
-// Claude Code status line: session info on the left (fixed) and a mascot on
-// the right.
-// - Mr Irrelevant, a calm 7-line pixel-art character, by default.
-// - With "mode": "buddies" in ~/.claude/claude-buddy.json: a 3-line buddy
-//   whose body and color come from a hash of the folder name, except in the
-//   folders listed under "mrIrrelevant". The buddy walks, looks around, waves
-//   and jumps while Claude is idle; while Claude works it cycles rainbow
-//   colors, pumps its arms and throws sparkles.
-// Both get tired as context fills up. Animated through
-// statusLine.refreshInterval in settings.json; the animation state lives in a
-// small per-session file in the temp folder.
-// Node on purpose: it starts ~10x faster than pwsh, and this runs every second.
+// Claude Code status line: session info on the left (fixed) and a pixel-art
+// character on the right, 7 lines tall.
+//
+// Which character shows up in a folder (~/.claude/claude-buddy.json):
+//   { "projects": { "C:/code/api": "gato" },   // set with /buddy
+//     "mrIrrelevant": ["C:/work"],             // folders that always get Mr
+//     "mode": "buddies" }                      // "buddies" = a character per
+//                                              // folder instead of Mr
+// Without that file Mr Irrelevant shows up everywhere. "auto" picks a
+// character from a hash of the folder name, so a project always keeps its own.
+//
+// Everyone stands calmly, blinks now and then, waves from time to time and
+// celebrates while Claude works; they get darker as the context fills up.
+// Animated through statusLine.refreshInterval in settings.json; the animation
+// state lives in a small per-session file in the temp folder.
+// Node on purpose: it starts ~10x faster than pwsh, and this runs often.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -24,8 +28,8 @@ if (!data) { process.stdout.write('Claude Code\n'); process.exit(0); }
 const ESC = '\x1b';
 const reset = `${ESC}[0m`, dim = `${ESC}[2m`;
 const red = `${ESC}[31m`, green = `${ESC}[32m`, yellow = `${ESC}[33m`, blue = `${ESC}[34m`, cyan = `${ESC}[36m`;
-const NBSP = ' ';
-const BLANK = '⠀';  // braille blank: looks empty but is not whitespace
+const NBSP = '\u00a0';
+const BLANK = '\u2800';  // braille blank: looks empty but is not whitespace
 const rand = (n) => Math.floor(Math.random() * n);
 const randIn = (min, max) => min + rand(max - min);  // max exclusive
 
@@ -34,7 +38,7 @@ const sessionId = data.session_id || 'default';
 const stateFile = path.join(os.tmpdir(), `claude-statusline-${sessionId}.json`);
 let state = {};
 try { state = JSON.parse(fs.readFileSync(stateFile, 'utf8')); } catch { }
-state = { frame: 0, git: '', gitAt: 0, cwd: '', pos: 0, action: 'stand', left: 0, dir: 1, ...state };
+state = { frame: 0, git: '', gitAt: 0, cwd: '', action: 'stand', left: 0, dir: 1, ...state };
 const now = Date.now();
 
 const modelName = data.model?.display_name || 'Claude';
@@ -79,24 +83,60 @@ try { working = (now - fs.statSync(data.transcript_path).mtimeMs) / 1000 < 4; } 
 const frame = (state.frame + 1) % 1000;
 state.frame = frame;
 
-// Info block on the left (fixed width so the mascot never shifts) and the
-// mascot rows on the right from column $pos. infoTop is the mascot row where
-// the 3 info lines start.
-const visible = (s) => s.replace(/\x1b\[[0-9;]*m/g, '').length;
-function writeRows(mascotRows, pos, infoTop) {
-    const info1 = [`${cyan}${modelName}${reset}`, `${blue}${dirName}${reset}`];
-    if (gitStr) info1.push(gitStr);
-    const mood = working ? 'trabajando' + '.'.repeat(1 + frame % 3)
+// What the left side shows. /buddy writes the list; these are the pieces.
+const SEGMENTS = {
+    model: () => `${cyan}${modelName}${reset}`,
+    dir: () => `${blue}${dirName}${reset}`,
+    git: () => gitStr,
+    context: () => ctxStr,
+    mood: () => `${dim}${working ? 'trabajando' + '.'.repeat(1 + frame % 3)
         : pct >= 80 ? 'agotado, toca /compact'
-        : pct >= 50 ? 'algo cansado' : BLANK;
-    const info = [info1.join(` ${dim}|${reset} `), ctxStr, `${dim}${mood}${reset}`];
+        : pct >= 50 ? 'algo cansado' : ''}${reset}`,
+    clock: () => {
+        const d = new Date();
+        return `${dim}${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}${reset}`;
+    },
+    session: () => {  // how long this session has been going
+        try {
+            const mins = Math.floor((now - fs.statSync(data.transcript_path).birthtimeMs) / 60000);
+            return `${dim}${mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`}${reset}`;
+        } catch { return ''; }
+    },
+    lines: () => {  // lines Claude added/removed this session
+        const a = data.cost?.total_lines_added, r = data.cost?.total_lines_removed;
+        return a == null && r == null ? '' : `${green}+${a || 0}${reset} ${red}-${r || 0}${reset}`;
+    },
+};
+const DEFAULT_SEGMENTS = ['model', 'dir', 'git', 'context', 'mood'];
+
+// Info block on the left (fixed width) and the character rows on the right.
+const visible = (s) => s.replace(/\x1b\[[0-9;]*m/g, '').length;
+function buildInfo(segments) {
+    // lay the segments out in order, wrapping to a new line at ~34 columns
+    const lines = [];
+    let cur = [], curWidth = 0;
+    for (const name of segments) {
+        const cell = (SEGMENTS[name] || (() => ''))();
+        if (!cell || !visible(cell)) continue;
+        const w = visible(cell);
+        if (cur.length && curWidth + w + 3 > 34) { lines.push(cur); cur = []; curWidth = 0; }
+        cur.push(cell);
+        curWidth += w + 3;
+    }
+    if (cur.length) lines.push(cur);
+    return lines.map((cells) => cells.join(` ${dim}|${reset} `));
+}
+
+function writeRows(rows, segments) {
+    const info = buildInfo(segments);
     const width = Math.max(30, ...info.map(visible));
+    const top = Math.max(0, Math.floor((rows.length - info.length) / 2));
     // Claude Code trims leading whitespace (NBSP included), which would glue
     // rows without info text to the left edge; they start with BLANK instead.
-    const out = mascotRows.map((row, i) => {
-        const j = i - infoTop;
+    const out = rows.map((row, i) => {
+        const j = i - top;
         const text = j >= 0 && j < info.length ? info[j] : BLANK;
-        return `${reset}${text}${NBSP.repeat(width - visible(text) + 2 + pos)}${row}${reset}`;
+        return `${reset}${text}${NBSP.repeat(width - visible(text) + 2)}${row}${reset}`;
     });
     process.stdout.write(out.join('\n') + '\n');
 }
@@ -105,31 +145,124 @@ function saveState() {
     try { fs.writeFileSync(stateFile, JSON.stringify(state)); } catch { }
 }
 
-// Mr Irrelevant everywhere by default. With "mode": "buddies" in
-// ~/.claude/claude-buddy.json, only the folders under "mrIrrelevant" get him
-// (each entry covers everything inside it; wildcards work).
-function useMr() {
-    let cfg;
-    try { cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'claude-buddy.json'), 'utf8')); } catch { return true; }
-    if (cfg.mode !== 'buddies') return true;
-    const norm = (p) => String(p).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-    const here = norm(cwd);
-    return [].concat(cfg.mrIrrelevant || []).some((p) => {
-        if (!p) return false;
-        p = norm(p);
-        if (here === p || here.startsWith(p + '/')) return true;
-        if (!p.includes('*')) return false;
-        const re = new RegExp('^' + p.replace(/[.+^${}()|[\]]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
-        return re.test(here);
-    });
+// A 13-row grid of letters ('.' = transparent) becomes terminal rows.
+//   mini   only the head, 4 rows
+//   normal the whole character, 7 rows: '▀' per cell, fg = top pixel,
+//          bg = bottom pixel, with a blank pixel row on top
+//   grande one row per pixel row and two columns per pixel, 13 rows
+const SIZES = { mini: 'mini', normal: 'normal', grande: 'grande' };
+function render(grid, pal, size = 'normal') {
+    const rgb = (c) => `${c[0]};${c[1]};${c[2]}`;
+    if (size === 'grande') {
+        return grid.map((row) => {
+            let s = '';
+            for (const ch of row) s += ch === '.' ? `${reset}  ` : `${ESC}[38;2;${rgb(pal[ch])}m██`;
+            return s;
+        });
+    }
+    const canvas = size === 'mini' ? grid.slice(0, 8) : ['.'.repeat(14), ...grid];
+    const rows = [];
+    for (let l = 0; l < canvas.length / 2; l++) {
+        const top = canvas[2 * l], bot = canvas[2 * l + 1];
+        let s = '';
+        for (let c = 0; c < 14; c++) {
+            const t = top[c], b = bot[c];
+            if (t === '.' && b === '.') s += `${reset} `;
+            else if (b === '.') s += `${reset}${ESC}[38;2;${rgb(pal[t])}m▀`;
+            else if (t === '.') s += `${reset}${ESC}[38;2;${rgb(pal[b])}m▄`;
+            else s += `${ESC}[38;2;${rgb(pal[t])};48;2;${rgb(pal[b])}m▀`;
+        }
+        rows.push(s);
+    }
+    return rows;
 }
 
-const rgb = (c) => `${c[0]};${c[1]};${c[2]}`;
+// Everyone gets darker as the context fills past 50%
+function tire(pal, keep = []) {
+    const k = 1 - Math.min(1, Math.max(0, (pct - 50) / 40)) * 0.45;
+    if (k === 1) return pal;
+    const out = {};
+    for (const [letter, c] of Object.entries(pal)) {
+        out[letter] = keep.includes(letter) ? c : c.map((v) => Math.round(v * k));
+    }
+    return out;
+}
 
-if (useMr()) {
-    // 14x13 pixel poses; each terminal row shows two pixel rows with '▀'.
-    // L highlight, P body, E shade, K glasses frame, O pupil, W glint,
-    // M mouth, R tongue, S sparkle, B sweat
+// ---- which character lives here ----
+
+function readConfig() {
+    try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'claude-buddy.json'), 'utf8')); }
+    catch { return {}; }
+}
+const norm = (p) => String(p).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+function covers(folder, here) {
+    folder = norm(folder);
+    if (here === folder || here.startsWith(folder + '/')) return true;
+    if (!folder.includes('*')) return false;
+    const re = new RegExp('^' + folder.replace(/[.+^${}()|[\]]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
+    return re.test(here);
+}
+
+// Settings for this folder: character, size and segments. /buddy writes the
+// "projects" entries, either "gato" or { character, size, segments }.
+function settingsFor(cfg) {
+    const here = norm(cwd);
+    let best = -1, found = null;
+    for (const [folder, value] of Object.entries(cfg.projects || {})) {
+        if (covers(folder, here) && norm(folder).length > best) { best = norm(folder).length; found = value; }
+    }
+    const entry = typeof found === 'string' ? { character: found } : (found || {});
+    const fallback = [].concat(cfg.mrIrrelevant || []).some((f) => f && covers(f, here)) ? 'mr'
+        : cfg.mode === 'buddies' ? 'auto' : 'mr';
+    return {
+        character: entry.character || cfg.character || fallback,
+        size: SIZES[entry.size || cfg.size] || 'normal',
+        segments: entry.segments || cfg.segments || DEFAULT_SEGMENTS,
+    };
+}
+
+const BUDDIES = /*BUDDIES*/{"marciano": {"label": "Marciano","colors": {"S": [255,240,150],"G": [70,170,70],"L": [140,230,110],"D": [50,130,55],"K": [12,16,12],"W": [255,255,255],"M": [30,70,30],"Y": [255,220,80]},"poses": {"normal": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.",".GLKWKLLKWKLG.",".GLKKKLLKKKLG.","..GLLLMMLLLG..","...GGLLLLGG...",".GGDLLLLLLDGG.",".G.DLLLLLLD.G.","...DDLLLLDD...","...DD....DD..."],"blink": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.",".GLGGGLLGGGLG.",".GLGGGLLGGGLG.","..GLLLMMLLLG..","...GGLLLLGG...",".GGDLLLLLLDGG.",".G.DLLLLLLD.G.","...DDLLLLDD...","...DD....DD..."],"wave": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.",".GLKWKLLKWKLGG",".GLKKKLLKKKLGG","..GLLLMMLLLG.G","...GGLLLLGG..G",".GGDLLLLLLDG..",".G.DLLLLLLD...","...DDLLLLDD...","...DD....DD..."],"cheer": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.","GGLKWKLLKWKLGG","GGLKKKLLKKKLGG","G.GLLLMMLLLG.G","G..GGLLLLGG..G","..GDLLLLLLDG..","...DLLLLLLD...","...DDLLLLDD...","...DD....DD..."],"cheer2": ["..Y........Y..","...G......G...","....GGGGGG....","..GGLLLLLLGG..",".GLLLLLLLLLLG.","GGLKWKLLKWKLGG","GGLKKKLLKKKLGG","G.GLLLMMLLLG.G","G..GGLLLLGG..G","..GDLLLLLLDG..","...DLLLLLLD...","...DDLLLLDD...","...DD....DD..."]}},"gato": {"label": "Gato","colors": {"S": [255,240,150],"O": [120,60,20],"B": [245,150,60],"A": [255,190,170],"C": [255,225,190],"K": [20,12,8],"W": [240,240,240],"N": [240,110,130],"M": [120,60,20],"T": [245,150,60]},"poses": {"normal": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBKWBBBBKWBO.","WOBKKBBBBKKBOW",".OBBBBNNBBBBO.","W.OBBMBBMBBO.W",".BOBCCCCCCBOB.",".O.OCCCCCCO.O.","...OBBBBBBO..T","...OO....OOTT."],"blink": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBBBBBBBBBBO.","WOBBBBBBBBBBOW",".OBBBBNNBBBBO.","W.OBBMBBMBBO.W",".BOBCCCCCCBOB.",".O.OCCCCCCO.O.","...OBBBBBBO..T","...OO....OOTT."],"wave": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBKWBBBBKWBOB","WOBKKBBBBKKBOB",".OBBBBNNBBBBOB","W.OBBMBBMBBO.B",".BOBCCCCCCBO..",".O.OCCCCCCO...","...OBBBBBBO..T","...OO....OOTT."],"cheer": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.","BOBKWBBBBKWBOB","BOBKKBBBBKKBOB","BOBBBBNNBBBBOB","B.OBBMBBMBBO.B","..OBCCCCCCBO..","...OCCCCCCO...","...OBBBBBBO..T","...OO....OOTT."],"cheer2": ["..O........O..","..OO......OO..","..OAOOOOOOAO..","..OBBBBBBBBO..",".OBBBBBBBBBBO.","BOBKWBBBBKWBOB","BOBKKBBBBKKBOB","BOBBBBNNBBBBOB","B.OBBMBBMBBO.B","..OBCCCCCCBO..","...OCCCCCCO...","...OBBBBBBO..T","...OO....OOTT."]}},"perro": {"label": "Perro","colors": {"S": [255,240,150],"O": [80,50,25],"B": [200,140,80],"E": [120,75,40],"C": [245,225,195],"K": [20,12,8],"W": [255,255,255],"N": [30,20,20],"M": [90,40,40],"T": [240,100,120]},"poses": {"normal": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","EEEBKKBBKKBEEE",".EEBBCCCCBBEE.","..OBCCNNCCBO..","...OCMMMMCO...",".BOBBCTTCBBOB.",".O.OBBBBBBO.O.","...OBBBBBBO...","...OO....OO..."],"blink": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBBBBBBBBEEE","EEEBBBBBBBBEEE",".EEBBCCCCBBEE.","..OBCCNNCCBO..","...OCMMMMCO...",".BOBBCTTCBBOB.",".O.OBBBBBBO.O.","...OBBBBBBO...","...OO....OO..."],"wave": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","EEEBKKBBKKBEEB",".EEBBCCCCBBEEB","..OBCCNNCCBO.B","...OCMMMMCO..B",".BOBBCTTCBBO..",".O.OBBBBBBO...","...OBBBBBBO...","...OO....OO..."],"cheer": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","BEEBKKBBKKBEEB","BEEBBCCCCBBEEB","B.OBCCNNCCBO.B","B..OCMMMMCO..B","..OBBCTTCBBO..","...OBBBBBBO...","...OBBBBBBO...","...OO....OO..."],"cheer2": ["....OOOOOO....","..OOBBBBBBOO..",".EEOBBBBBBOEE.","EEEBBBBBBBBEEE","EEEBKWBBKWBEEE","BEEBKKBBKKBEEB","BEEBBCCCCBBEEB","B.OBCCNNCCBO.B","B..OCMMMMCO..B","..OBBCTTCBBO..","...OBBBBBBO...","...OBBBBBBO...","...OO....OO..."]}},"robot": {"label": "Robot","colors": {"S": [255,240,150],"O": [60,65,80],"G": [175,185,200],"D": [120,130,150],"K": [20,24,34],"C": [80,230,255],"R": [255,80,90],"M": [90,100,120]},"poses": {"normal": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.",".OGKCCKKCCKGO.",".OGKKKKKKKKGO.","..OGGMMMMGGO..","...OOOOOOOO...",".GOGGDRRDGGOG.",".O.OGDDDDGO.O.","...OGGGGGGO...","...OO....OO..."],"blink": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.",".OGKKKKKKKKGO.",".OGKKKKKKKKGO.","..OGGMMMMGGO..","...OOOOOOOO...",".GOGGDRRDGGOG.",".O.OGDDDDGO.O.","...OGGGGGGO...","...OO....OO..."],"wave": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.",".OGKCCKKCCKGOG",".OGKKKKKKKKGOG","..OGGMMMMGGO.G","...OOOOOOOO..G",".GOGGDRRDGGO..",".O.OGDDDDGO...","...OGGGGGGO...","...OO....OO..."],"cheer": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.","GOGKCCKKCCKGOG","GOGKKKKKKKKGOG","G.OGGMMMMGGO.G","G..OOOOOOOO..G","..OGGDRRDGGO..","...OGDDDDGO...","...OGGGGGGO...","...OO....OO..."],"cheer2": ["......RR......","......OO......","...OOOOOOOO...","..OGGGGGGGGO..",".OGKKKKKKKKGO.","GOGKCCKKCCKGOG","GOGKKKKKKKKGOG","G.OGGMMMMGGO.G","G..OOOOOOOO..G","..OGGDRRDGGO..","...OGDDDDGO...","...OGGGGGGO...","...OO....OO..."]}},"fantasma": {"label": "Fantasma","colors": {"S": [255,240,150],"O": [150,150,200],"W": [240,240,255],"K": [40,40,70],"M": [60,60,100],"P": [255,170,200]},"poses": {"normal": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.",".OWWKKWWKKWWO.",".OWWWWWWWWWWO.",".OWWWPMMPWWWO.",".OWWWWMMWWWWO.","WOWWWWWWWWWWOW",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"blink": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWWPMMPWWWO.",".OWWWWMMWWWWO.","WOWWWWWWWWWWOW",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"wave": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.",".OWWKKWWKKWWOW",".OWWWWWWWWWWOW",".OWWWPMMPWWWOW",".OWWWWMMWWWWOW","WOWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"cheer": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.","WOWWKKWWKKWWOW","WOWWWWWWWWWWOW","WOWWWPMMPWWWOW","WOWWWWMMWWWWOW",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."],"cheer2": ["....OOOOOO....","...OWWWWWWO...","..OWWWWWWWWO..",".OWWWWWWWWWWO.",".OWWKKWWKKWWO.","WOWWKKWWKKWWOW","WOWWWWWWWWWWOW","WOWWWPMMPWWWOW","WOWWWWMMWWWWOW",".OWWWWWWWWWWO.",".OWWWWWWWWWWO.",".OWWOWWWWOWWO.",".OO.OO..OO.OO."]}},"rana": {"label": "Rana","colors": {"S": [255,240,150],"O": [30,90,40],"G": [90,190,80],"L": [200,235,150],"K": [15,20,15],"W": [250,250,240],"M": [40,100,45]},"poses": {"normal": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","OGGGGGGGGGGGGO","OGMGGGGGGGGMGO",".OGMMMMMMMMGO.","..OGGGGGGGGO..",".GOGLLLLLLGOG.",".O.OLLLLLLO.O.","..OOGGGGGGOO..",".OOO......OOO."],"blink": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWGGO..OGGWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","OGGGGGGGGGGGGO","OGMGGGGGGGGMGO",".OGMMMMMMMMGO.","..OGGGGGGGGO..",".GOGLLLLLLGOG.",".O.OLLLLLLO.O.","..OOGGGGGGOO..",".OOO......OOO."],"wave": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","OGGGGGGGGGGGGG","OGMGGGGGGGGMGG",".OGMMMMMMMMGOG","..OGGGGGGGGO.G",".GOGLLLLLLGO..",".O.OLLLLLLO...","..OOGGGGGGOO..",".OOO......OOO."],"cheer": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","GGGGGGGGGGGGGG","GGMGGGGGGGGMGG","GOGMMMMMMMMGOG","G.OGGGGGGGGO.G","..OGLLLLLLGO..","...OLLLLLLO...","..OOGGGGGGOO..",".OOO......OOO."],"cheer2": ["..OOO....OOO..",".OWWWO..OWWWO.",".OWKKO..OKKWO.",".OGWWGOOGWWGO.",".OGGGGGGGGGGO.","GGGGGGGGGGGGGG","GGMGGGGGGGGMGG","GOGMMMMMMMMGOG","G.OGGGGGGGGO.G","..OGLLLLLLGO..","...OLLLLLLO...","..OOGGGGGGOO..",".OOO......OOO."]}},"pinguino": {"label": "Pingüino","colors": {"S": [255,240,150],"O": [20,24,40],"K": [50,58,90],"W": [245,245,250],"Y": [255,170,40],"E": [8,10,18]},"poses": {"normal": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","..OKWWKKWWKO..","..OKWEKKWEKO..",".OKKKKYYKKKKO.",".OKWWWYYWWWKO.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"blink": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","..OKKKKKKKKO..","..OKKKKKKKKO..",".OKKKKYYKKKKO.",".OKWWWYYWWWKO.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.",".KOWWWWWWWWOK.","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"wave": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","..OKWWKKWWKOKK","..OKWEKKWEKO.K",".OKKKKYYKKKKOK",".OKWWWYYWWWKOK",".KOWWWWWWWWO..",".KOWWWWWWWWO..",".KOWWWWWWWWO..","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"cheer": ["....OOOOOO....","...OKKKKKKO...",".SOKKKKKKKKOS.","KKOKWWKKWWKOKK","K.OKWEKKWEKO.K","KOKKKKYYKKKKOK","KOKWWWYYWWWKOK","..OWWWWWWWWO..","..OWWWWWWWWO..","..OWWWWWWWWO..","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."],"cheer2": ["....OOOOOO....","...OKKKKKKO...","..OKKKKKKKKO..","KKOKWWKKWWKOKK","K.OKWEKKWEKO.K","KOKKKKYYKKKKOK","KOKWWWYYWWWKOK","..OWWWWWWWWO..","..OWWWWWWWWO..","..OWWWWWWWWO..","..OKWWWWWWKO..","...OOOOOOOO...","...YYY..YYY..."]}},"panda": {"label": "Panda","colors": {"S": [255,240,150],"O": [95,95,108],"W": [245,245,245],"K": [62,62,74],"M": [200,90,110]},"poses": {"normal": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.",".OWKWKWWKWKWO.",".OWWKWWWWKWWO.","..OWWWKKWWWO..","...OWWMMWWO...",".KKOWWWWWWOKK.",".KK.OWWWWO.KK.","...OWWWWWWO...","...KKK..KKK..."],"blink": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.",".OWKKKWWKKKWO.",".OWWKWWWWKWWO.","..OWWWKKWWWO..","...OWWMMWWO...",".KKOWWWWWWOKK.",".KK.OWWWWO.KK.","...OWWWWWWO...","...KKK..KKK..."],"wave": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.",".OWKWKWWKWKWOK",".OWWKWWWWKWWOK","..OWWWKKWWWO.K","...OWWMMWWO..K",".KKOWWWWWWO...",".KK.OWWWWO....","...OWWWWWWO...","...KKK..KKK..."],"cheer": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.","KOWKWKWWKWKWOK","KOWWKWWWWKWWOK","K.OWWWKKWWWO.K","K..OWWMMWWO..K","...OWWWWWWO...","....OWWWWO....","...OWWWWWWO...","...KKK..KKK..."],"cheer2": ["..KK......KK..",".KKKOOOOOOKKK.",".KKOWWWWWWOKK.","..OWWWWWWWWO..",".OWKKKWWKKKWO.","KOWKWKWWKWKWOK","KOWWKWWWWKWWOK","K.OWWWKKWWWO.K","K..OWWMMWWO..K","...OWWWWWWO...","....OWWWWO....","...OWWWWWWO...","...KKK..KKK..."]}},"buho": {"label": "Búho","colors": {"S": [255,240,150],"O": [70,45,25],"B": [160,110,60],"C": [215,180,130],"W": [250,245,225],"K": [20,15,10],"Y": [255,180,50]},"poses": {"normal": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.",".OWKWBBBBWKWO.",".OWWWBYYBWWWO.",".OBBBBYYBBBBO.",".OBCBCBBCBCBO.","BOBBCBCCBCBBOB","BO.BCBCCBCB.OB","..OBBBBBBBBO..","...YY....YY..."],"blink": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.",".OWBWBBBBWBWO.",".OWWWBYYBWWWO.",".OBBBBYYBBBBO.",".OBCBCBBCBCBO.","BOBBCBCCBCBBOB","BO.BCBCCBCB.OB","..OBBBBBBBBO..","...YY....YY..."],"wave": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.",".OWKWBBBBWKWOB",".OWWWBYYBWWWOB",".OBBBBYYBBBBOB",".OBCBCBBCBCBOB","BOBBCBCCBCBBO.","BO.BCBCCBCB.O.","..OBBBBBBBBO..","...YY....YY..."],"cheer": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.","BOWKWBBBBWKWOB","BOWWWBYYBWWWOB","BOBBBBYYBBBBOB","BOBCBCBBCBCBOB",".OBBCBCCBCBBO.",".O.BCBCCBCB.O.","..OBBBBBBBBO..","...YY....YY..."],"cheer2": ["..O........O..","..OO......OO..","..OBOOOOOOBO..",".OBBBBBBBBBBO.",".OWWWBBBBWWWO.","BOWKWBBBBWKWOB","BOWWWBYYBWWWOB","BOBBBBYYBBBBOB","BOBCBCBBCBCBOB",".OBBCBCCBCBBO.",".O.BCBCCBCB.O.","..OBBBBBBBBO..","...YY....YY..."]}},"slime": {"label": "Slime","colors": {"S": [255,240,150],"O": [20,120,140],"B": [60,210,220],"L": [150,245,250],"W": [255,255,255],"K": [10,40,50],"M": [20,100,120]},"poses": {"normal": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","...OBLLLLBO...","..OBBBBBBBBO..",".OBBKWBBKWBBO.",".OBBKKBBKKBBO.","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"blink": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","...OBLLLLBO...","..OBBBBBBBBO..",".OBBBBBBBBBBO.",".OBBBBBBBBBBO.","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"wave": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","...OBLLLLBO.BB","..OBBBBBBBBO.B",".OBBKWBBKWBBOB",".OBBKKBBKKBBOB","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"cheer": ["..............","..............","......OO......",".....OLLO.....",".S..OLLWLO..S.","BB.OBLLLLBO.BB","B.OBBBBBBBBO.B","BOBBKWBBKWBBOB","BOBBKKBBKKBBOB","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."],"cheer2": ["..............","..............","......OO......",".....OLLO.....","....OLLWLO....","BB.OBLLLLBO.BB","B.OBBBBBBBBO.B","BOBBKWBBKWBBOB","BOBBKKBBKKBBOB","OBBBBBMMBBBBBO","OBBBBBBBBBBBBO","OBBBBBBBBBBBBO",".OOOOOOOOOOOO."]}}}/*END*/;
+
+const settings = settingsFor(readConfig());
+let who = settings.character;
+if (who === 'auto') {
+    // FNV-1a hash of the folder name, so a project always keeps its character
+    let hash = 2166136261;
+    for (const ch of dirName.toLowerCase()) hash = Math.imul((hash ^ ch.charCodeAt(0)) >>> 0, 16777619) >>> 0;
+    const names = Object.keys(BUDDIES);
+    who = names[hash % names.length];
+}
+if (who !== 'mr' && !BUDDIES[who]) who = 'mr';
+
+// ---- the calm animation everyone shares ----
+// Mostly standing (blinking now and then), sometimes waving; Mr can also look
+// to a side or cross his arms. While Claude works: celebrating.
+
+let pose = 'normal', blink = rand(100) < 8;
+if (working) {
+    state.action = 'stand';
+    state.left = 0;
+    pose = frame % 2 ? 'cheer' : 'cheer2';
+    blink = false;
+} else {
+    if (state.left <= 0) {
+        const roll = rand(100);
+        const extra = who === 'mr';
+        if (roll < 60) { state.action = 'stand'; state.left = randIn(8, 21); }
+        else if (roll < 75) { state.action = 'wave'; state.left = 4; }
+        else if (roll < 90 && extra) { state.action = 'look'; state.left = 4; state.dir = rand(2) ? 1 : -1; }
+        else if (extra) { state.action = 'cross'; state.left = randIn(6, 11); }
+        else { state.action = 'wave'; state.left = 4; }
+    }
+    if (state.action === 'wave') { pose = 'wave'; blink = false; }
+    else if (state.action === 'cross') pose = 'cross';
+    else if (state.action === 'look') pose = 'look';
+    state.left -= 1;
+}
+
+if (who === 'mr') {
+    // 14x13 pixel poses. L highlight, P body, E shade, K glasses frame,
+    // O pupil, W glint, M mouth, R tongue, S sparkle, B sweat
     const head = [
         '....EEEEEE....',
         '...EPLLLLPE...',
@@ -152,7 +285,7 @@ if (useMr()) {
         '..EPLLLLLLPE..',
         '..EPLLLLLLPE..',
     ];
-    const poses = {
+    const mrPoses = {
         normal: [...head, '.PEPLLLLLLPEP.', '.PEPLLLLLLPEP.', '.EEPLLLLLLPEE.', ...legs],
         wave: [
             '....EEEEEE..PE',
@@ -172,180 +305,38 @@ if (useMr()) {
         cheer2: [...cheerTop('EP.SEEEEEES.PE'), ...legs],
     };
     // Inside of each lens on row 3
-    const eyesMap = { open: 'WOP', blink: 'EEE', left: 'WOP', right: 'POW', tired: 'EOP' };
+    const lensFor = { open: 'WOP', blink: 'EEE', left: 'WOP', right: 'POW', tired: 'EOP' };
 
-    // Calm on purpose: Mr stays in place and holds each pose for a while.
-    // Mostly standing (blinking now and then); sometimes he waves, looks to a
-    // side or crosses his arms.
-    let pose = 'normal', eyes = rand(100) < 8 ? 'blink' : 'open';
-    if (working) {
-        state.action = 'stand'; state.left = 0;
-        pose = frame % 2 ? 'cheer' : 'cheer2';
-    } else {
-        if (state.left <= 0) {
-            const roll = rand(100);
-            if (roll < 60) { state.action = 'stand'; state.left = randIn(8, 21); }
-            else if (roll < 75) { state.action = 'wave'; state.left = 4; }
-            else if (roll < 90) { state.action = 'look'; state.left = 4; state.dir = rand(2) ? 1 : -1; }
-            else { state.action = 'cross'; state.left = randIn(6, 11); }
-        }
-        if (state.action === 'wave') pose = 'wave';
-        else if (state.action === 'cross') pose = 'cross';
-        else if (state.action === 'look') eyes = state.dir < 0 ? 'left' : 'right';
-        state.left -= 1;
-    }
+    let eyes = blink ? 'blink' : 'open';
+    if (pose === 'look') { eyes = state.dir < 0 ? 'left' : 'right'; pose = 'normal'; }
     if (pct >= 50 && eyes === 'open') eyes = 'tired';
 
-    const grid = [...poses[pose]];
-    const lens = eyesMap[eyes];
+    const grid = [...mrPoses[pose]];
+    const lens = lensFor[eyes];
     grid[3] = grid[3].slice(0, 2) + lens + 'KKKK' + lens + grid[3].slice(12);
     if (pct >= 80 && (pose === 'normal' || pose === 'cross')) {
         grid[1] = grid[1].slice(0, 12) + 'B' + grid[1].slice(13);
     }
 
-    // Colors: Mr's purple; brand gradient pulsing while working; darker as
-    // the context fills up
     const pal = {
         L: [182, 92, 255], P: [152, 60, 242], E: [98, 20, 188], K: [44, 18, 70], O: [4, 2, 8],
         W: [255, 255, 255], M: [22, 4, 42], R: [120, 40, 160], S: [237, 171, 251], B: [140, 200, 255],
     };
     if (working) {
+        // the brand gradient, pulsing
         const t = (Math.sin(frame * 0.9) + 1) / 2;
         const a = [139, 123, 245], b = [192, 105, 207];
         pal.P = a.map((v, i) => Math.round(v + (b[i] - v) * t));
         pal.L = pal.P.map((v) => Math.min(255, Math.round(v * 1.18)));
         pal.E = pal.P.map((v) => Math.round(v * 0.62));
-    } else {
-        const k = 1 - Math.min(1, Math.max(0, (pct - 50) / 40)) * 0.45;
-        for (const c of ['L', 'P', 'E']) pal[c] = pal[c].map((v) => Math.round(v * k));
     }
-
-    // A blank pixel row on top makes 14 rows = 7 terminal rows; each shows
-    // two pixel rows with '▀' (fg = top pixel, bg = bottom pixel)
-    const canvas = ['.'.repeat(14), ...grid];
-    const rows = [];
-    for (let l = 0; l < 7; l++) {
-        const top = canvas[2 * l], bot = canvas[2 * l + 1];
-        let s = '';
-        for (let c = 0; c < 14; c++) {
-            const t = top[c], b = bot[c];
-            if (t === '.' && b === '.') s += `${reset} `;
-            else if (b === '.') s += `${reset}${ESC}[38;2;${rgb(pal[t])}m▀`;
-            else if (t === '.') s += `${reset}${ESC}[38;2;${rgb(pal[b])}m▄`;
-            else s += `${ESC}[38;2;${rgb(pal[t])};48;2;${rgb(pal[b])}m▀`;
-        }
-        rows.push(s);
-    }
-    state.pos = 0;
-    writeRows(rows, 0, 2);
-    saveState();
-    process.exit(0);
-}
-
-// ---- 3-line buddy ----
-
-// Project identity: FNV-1a hash of the folder name -> body + color
-let hash = 2166136261;
-for (const ch of dirName.toLowerCase()) hash = Math.imul((hash ^ ch.charCodeAt(0)) >>> 0, 16777619) >>> 0;
-
-// Every body is 7 columns wide; feet = stand, left foot up, right foot up
-const bodies = [
-    { top: '╭─────╮', l: '│', r: '│', feet: ['╰┬───┬╯', '╰┴───┬╯', '╰┬───┴╯'] },  // blob
-    { top: '┌──┴──┐', l: '│', r: '│', feet: ['└┬───┬┘', '└┴───┬┘', '└┬───┴┘'] },  // robot
-    { top: '╭^───^╮', l: '│', r: '│', feet: ['╰┬───┬╯', '╰┴───┬╯', '╰┬───┴╯'] },  // cat
-    { top: '(o)─(o)', l: '│', r: '│', feet: ['╰┬───┬╯', '╰┴───┬╯', '╰┬───┴╯'] },  // bear
-    { top: ".-~~~-.", l: '(', r: ')', feet: ["'-┬─┬-'", "'-┴─┬-'", "'-┬─┴-'"] },  // cloud
-    { top: '╭─────╮', l: '│', r: '│', feet: ['╰v^v^v╯', '╰^v^v^╯', '╰v^v^v╯'] },  // ghost
-];
-// Base colors (RGB): sky, pink, purple, green, orange, blue, gold, coral
-const palette = [
-    [0, 215, 255], [255, 135, 255], [175, 135, 255], [135, 215, 135],
-    [255, 175, 95], [95, 175, 255], [255, 215, 135], [255, 95, 135],
-];
-const body = bodies[hash % bodies.length];
-const baseRgb = palette[Math.floor(hash / bodies.length) % palette.length];
-
-function hueRgb(hue) {
-    // Pastel rainbow: HSV with s=0.55, v=1
-    const h = (hue % 360) / 60, s = 0.55;
-    const x = 1 - s * (1 - Math.abs((h % 2) - 1)), m = 1 - s;
-    const c = [[1, x, m], [x, 1, m], [m, 1, x], [m, x, 1], [x, m, 1], [1, m, x]][Math.floor(h)];
-    return c.map((v) => Math.round(v * 255));
-}
-
-// Color: rainbow while Claude works; otherwise the project color, fading
-// toward red as the context fills past 50%
-let color;
-if (working) {
-    color = hueRgb(frame * 40);
+    const colors = working ? pal : tire(pal, ['K', 'O', 'W', 'M', 'B']);
+    writeRows(render(grid, colors, settings.size), settings.segments);
 } else {
-    const k = Math.min(1, Math.max(0, (pct - 50) / 40)) * 0.85;
-    color = baseRgb.map((v, i) => Math.round(v + ([255, 70, 70][i] - v) * k));
+    const b = BUDDIES[who];
+    if (pose === 'look' || pose === 'cross') pose = 'normal';
+    if (blink) pose = 'blink';
+    writeRows(render(b.poses[pose], tire(b.colors, ['K', 'W']), settings.size), settings.segments);
 }
-const bodyColor = `${ESC}[38;2;${rgb(color)}m`;
-const spark = (c) => `${ESC}[38;2;255;240;150m${c}${bodyColor}`;
 
-// Animation: a small state machine advanced once per render. While idle the
-// mascot mostly stands facing front, and now and then walks a few steps,
-// looks around, waves or jumps. While working it stays put, pumps its arms,
-// reads and throws sparkles.
-const span = 24 - 9;  // 24-column lane; 9 = body (7) + one arm column each side
-let pos = Math.min(Math.max(state.pos, 0), span);
-let look = 0, feet = body.feet[0], happy = false, blink = rand(100) < 12;
-let armL = ' ', armR = ' ', topL = ' ', topR = ' ', botL = ' ', botR = ' ';
-
-if (working) {
-    state.action = 'stand'; state.left = 0;
-    armL = frame % 2 ? '\\' : '/';
-    armR = frame % 2 ? '/' : '\\';
-    look = frame % 2 ? -1 : 1;
-    blink = false;
-    switch (frame % 4) {
-        case 0: topL = spark('*'); botR = spark('+'); break;
-        case 1: topR = spark('+'); botL = spark('·'); break;
-        case 2: topR = spark('*'); botL = spark('+'); break;
-        case 3: topL = spark('+'); botR = spark('·'); break;
-    }
-} else {
-    if (state.left <= 0) {
-        const roll = rand(100);
-        if (roll < 45) { state.action = 'stand'; state.left = randIn(5, 11); }
-        else if (roll < 70) { state.action = 'walk'; state.left = randIn(3, 9); state.dir = rand(2) ? 1 : -1; }
-        else if (roll < 85) { state.action = 'look'; state.left = 4; }
-        else if (roll < 95) { state.action = 'wave'; state.left = 4; }
-        else { state.action = 'jump'; state.left = 4; }
-    }
-    const left = state.left;
-    switch (state.action) {
-        case 'walk': {
-            let dir = state.dir;
-            if (pos + dir < 0 || pos + dir > span) { dir = -dir; state.dir = dir; }
-            pos += dir; look = dir; blink = false;
-            feet = body.feet[1 + (frame % 2)];
-            break;
-        }
-        case 'look': look = left > 2 ? -1 : 1; blink = false; break;
-        case 'wave': happy = true; if (left % 2) topR = '/'; else armR = '/'; break;
-        case 'jump':
-            happy = true;
-            if (left % 2) { topL = '\\'; topR = '/'; feet = body.feet[0].replaceAll('┬', '┴'); }
-            break;
-    }
-    state.left = left - 1;
-}
-state.pos = pos;
-
-// Eyes: mood from context; happy when waving or jumping; occasional blink
-let eye = pct >= 50 && pct < 80 ? '▬' : '▮';
-if (blink) eye = '─';
-if (happy) eye = '^';
-const face = look < 0 ? `${eye} ${eye}  ` : look > 0 ? `  ${eye} ${eye}` : ` ${eye} ${eye} `;
-if (pct >= 80 && topR === ' ') topR = `${ESC}[38;5;117m'${bodyColor}`;
-
-const mascot = [
-    `${topL}${body.top}${topR}`,
-    `${armL}${body.l}${face}${body.r}${armR}`,
-    `${botL}${feet}${botR}`,
-].map((s) => `${bodyColor}${s}${reset}`);
-writeRows(mascot, pos, 0);
 saveState();

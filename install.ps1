@@ -29,6 +29,7 @@ if ($Uninstall) {
         $settings | ConvertTo-Json -Depth 32 | Set-Content $settingsPath
     }
     Remove-Item -LiteralPath $target -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $claudeDir 'commands/buddy.md') -ErrorAction SilentlyContinue
     Write-Host 'claude-buddy desinstalado. Backup de tu configuración en settings.json.bak'
     return
 }
@@ -43,6 +44,17 @@ if ($local -and (Test-Path $local)) {
     Copy-Item $local $target -Force
 } else {
     Invoke-WebRequest "$repoRaw/claude-buddy.mjs" -OutFile $target
+}
+
+# /buddy slash command
+$commandsDir = Join-Path $claudeDir 'commands'
+New-Item -ItemType Directory -Force -Path $commandsDir | Out-Null
+$command = Join-Path $commandsDir 'buddy.md'
+$localCommand = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'commands/buddy.md' }
+if ($localCommand -and (Test-Path $localCommand)) {
+    Copy-Item $localCommand $command -Force
+} else {
+    Invoke-WebRequest "$repoRaw/commands/buddy.md" -OutFile $command
 }
 
 if ($settings.Contains('statusLine')) {

@@ -1,31 +1,42 @@
 # claude-buddy
 
-**Mr Irrelevant** en la barra de estado de [Claude Code](https://code.claude.com): un personaje en pixel art que te acompaña mientras trabajas. Casi siempre está tranquilo, a veces saluda, celebra cuando Claude trabaja y se cansa a medida que se llena el contexto.
+Un personaje en pixel art en la barra de estado de [Claude Code](https://code.claude.com), que te acompaña mientras trabajas. Está tranquilo casi todo el tiempo, saluda de vez en cuando, celebra cuando Claude trabaja y se cansa a medida que se llena el contexto.
 
 ![claude-buddy en acción: Mr Irrelevant tranquilo y luego celebrando mientras Claude trabaja](docs/demo.gif)
 
-## Qué hace
+## Personajes
 
-- **Mr Irrelevant, tranquilo.** Casi siempre está de pie y parpadea de vez en cuando. A ratos saluda, mira a un lado o cruza los brazos.
-- **Celebra cuando Claude trabaja.** Levanta los brazos, le brillan chispas y su color pasa por el degradado de la marca.
-- **Te avisa del contexto.** A partir del 50% entrecierra los ojos y se va oscureciendo; por encima del 80% suda y te sugiere hacer `/compact`.
-- **Barra de estado completa.** Modelo, carpeta, rama de git (`*` cambios sin commit, `↑` / `↓` commits por subir o bajar) y una barra de contexto por colores.
-- **Ligero.** Está hecho en Node.js sin dependencias: cada actualización tarda del orden de 100 ms.
+Por defecto sale **Mr Irrelevant**. Con `/buddy` eliges otro para cada proyecto:
 
-## Muñequitos por proyecto (opcional)
+![Los personajes disponibles](docs/personajes.png)
 
-Si prefieres un muñequito distinto en cada proyecto, crea `~/.claude/claude-buddy.json`:
+`mr` · `marciano` · `gato` · `perro` · `robot` · `fantasma` · `rana` · `pinguino` · `panda` · `buho` · `slime` · `auto`
 
-```json
-{
-  "mode": "buddies",
-  "mrIrrelevant": ["C:/Users/TU_USUARIO/proyectos/importante"]
-}
+Con `auto`, el personaje se elige a partir del nombre de la carpeta, así que cada proyecto conserva siempre el suyo.
+
+## El comando `/buddy`
+
+```
+/buddy                     ve qué tiene este proyecto y qué opciones hay
+/buddy gato                cambia el personaje de esta carpeta
+/buddy panda mini          personaje y tamaño a la vez
+/buddy grande              solo el tamaño
+/buddy segments model dir git context clock
+/buddy reset               vuelve a lo predeterminado
 ```
 
-Con `"mode": "buddies"` cada carpeta recibe un muñequito de 3 líneas (blob, robot, gato, oso, nube o fantasma) con su propio color, siempre el mismo para la misma carpeta. Ese muñequito camina, mira, saluda y salta, y se pone en arcoíris cuando Claude trabaja. Las carpetas de `mrIrrelevant`, con todo lo que tengan dentro, siguen mostrando a Mr. También admite comodines como `*`.
+Todo se guarda por carpeta (y cubre lo que haya dentro) en `~/.claude/claude-buddy.json`.
 
-Sin ese archivo, Mr aparece en todas partes.
+**Tamaños:** `mini` (4 líneas, solo la cabeza), `normal` (7 líneas), `grande` (13 líneas).
+
+**Segmentos**, en el orden que los escribas: `model`, `dir`, `git`, `context`, `mood`, `clock`, `session` (duración de la sesión) y `lines` (líneas añadidas y quitadas por Claude). Se acomodan solos en varias líneas.
+
+## Qué muestra
+
+- **El personaje**: tranquilo, parpadeando de vez en cuando; a ratos saluda; Mr además mira a los lados y cruza los brazos. Cuando Claude trabaja, celebra con los brazos arriba y chispas.
+- **El contexto**: a partir del 50% el personaje se va oscureciendo; por encima del 80% te sugiere hacer `/compact`.
+- **Git**: rama, `*` si hay cambios sin commit y `↑` / `↓` para los commits por subir o bajar.
+- **Ligero**: Node.js sin dependencias, del orden de 100 ms por actualización.
 
 ## Requisitos
 
@@ -50,12 +61,12 @@ cd claude-buddy
 ./install.ps1
 ```
 
-El instalador copia `claude-buddy.mjs` a `~/.claude/` y configura `statusLine` en `~/.claude/settings.json`. El resto de tu configuración no se toca, y antes de cambiar nada guarda una copia en `settings.json.bak`.
+El instalador copia `claude-buddy.mjs` y el comando `/buddy` a `~/.claude/`, y configura `statusLine` en `~/.claude/settings.json`. El resto de tu configuración no se toca, y antes de cambiar nada guarda una copia en `settings.json.bak`.
 
 <details>
 <summary>Instalación manual (macOS, Linux o Windows)</summary>
 
-Copia `claude-buddy.mjs` a `~/.claude/` y añade esto a `~/.claude/settings.json`, ajustando la ruta:
+Copia `claude-buddy.mjs` a `~/.claude/` y `commands/buddy.md` a `~/.claude/commands/`. Luego añade esto a `~/.claude/settings.json`, ajustando la ruta:
 
 ```json
 "statusLine": {
@@ -67,26 +78,50 @@ Copia `claude-buddy.mjs` a `~/.claude/` y añade esto a `~/.claude/settings.json
 
 </details>
 
+## Configuración
+
+`~/.claude/claude-buddy.json`, que normalmente escribe `/buddy`:
+
+```json
+{
+  "projects": {
+    "c:/code/api": { "character": "gato", "size": "mini",
+                     "segments": ["model", "dir", "git", "context"] },
+    "c:/code/web": "robot"
+  },
+  "mode": "buddies",
+  "mrIrrelevant": ["c:/trabajo"]
+}
+```
+
+- `projects`: lo que vale para cada carpeta. Gana la carpeta más específica.
+- `mode`: `"buddies"` hace que las carpetas sin configurar usen `auto` en vez de Mr.
+- `mrIrrelevant`: carpetas que siempre muestran a Mr. Admite comodines como `*`.
+- `character`, `size` y `segments` también se pueden poner en la raíz, como valores por defecto para todo.
+
 ## Desinstalar
 
 ```powershell
 ./install.ps1 -Uninstall
 ```
 
-Quita el `statusLine` de claude-buddy y borra el script.
+Quita el `statusLine` de claude-buddy, el comando y el script.
 
-## Personalizar
+## Personalizar o crear personajes
 
-Todo está en `claude-buddy.mjs`:
+Los dibujos están en `design/buddies.py`: cada personaje es una cuadrícula de 14×13 letras (una letra por píxel, `.` transparente) más su paleta. Las poses de saludo, celebración y parpadeo se generan solas a partir de los píxeles de los brazos y de los ojos que declares.
 
-- **Poses de Mr:** el objeto `poses`. Cada letra es un píxel: `P` cuerpo, `L` brillo, `E` sombra, `K` montura de las gafas, `W` brillo del ojo, `M` boca, `R` lengua, `S` chispas; `.` es transparente.
-- **Colores:** el objeto `pal` para Mr y la lista `palette` para los muñequitos.
-- **Qué tan seguido hace cada cosa:** las probabilidades en los bloques de `rand(100)`.
-- **Velocidad:** `refreshInterval` en `settings.json`, en segundos. Con valores más altos se mueve menos y consume menos.
+```powershell
+python design/buddies.py           # dibuja las vistas previas en design/preview/
+python design/buddies.py export > design/buddies.json
+node design/inject.mjs claude-buddy.mjs
+```
+
+Mr Irrelevant vive directamente en `claude-buddy.mjs`, porque tiene poses propias.
 
 ## Cómo funciona
 
-Claude Code ejecuta el script cada `refreshInterval` segundos y le pasa por stdin un JSON con los datos de la sesión. El script dibuja la información a la izquierda y el personaje a la derecha. Mr está hecho con medios bloques (`▀`): cada carácter muestra dos píxeles, uno con el color de la letra y otro con el color de fondo. El estado de la animación se guarda en un archivo pequeño por sesión en la carpeta temporal. Para saber si Claude está trabajando, el script mira si el historial de la sesión cambió en los últimos segundos.
+Claude Code ejecuta el script cada `refreshInterval` segundos y le pasa por stdin un JSON con los datos de la sesión. El script dibuja la información a la izquierda y el personaje a la derecha, con medios bloques (`▀`): cada carácter muestra dos píxeles, uno con el color de la letra y otro con el color de fondo. El estado de la animación se guarda en un archivo pequeño por sesión en la carpeta temporal. Para saber si Claude está trabajando, mira si el historial de la sesión cambió en los últimos segundos.
 
 ## Licencia
 
