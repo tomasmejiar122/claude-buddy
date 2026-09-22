@@ -16,8 +16,10 @@ Con `auto`, el personaje se elige a partir del nombre de la carpeta, así que ca
 
 ## El comando `/buddy`
 
+Sin argumentos abre menús para elegir personaje, tamaño y extras; con argumentos aplica el cambio directo:
+
 ```
-/buddy                     ve qué tiene este proyecto y qué opciones hay
+/buddy                     abre los menús
 /buddy gato                cambia el personaje de esta carpeta
 /buddy panda mini          personaje y tamaño a la vez
 /buddy grande              solo el tamaño
