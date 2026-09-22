@@ -445,7 +445,9 @@ function characterRows() {
 // ---- what goes on the right: the character, a pixel clock, a pixel phrase ----
 
 const COLORS = { degradado: 'degradado', arcoiris: 'arcoiris', contexto: 'contexto' };
-const textScale = { mini: 1, normal: 2, grande: 3 }[settings.size];
+// The letters go one step smaller than the character, so a clock next to it
+// does not swallow it
+const textScale = { mini: 1, normal: 1, grande: 2 }[settings.size];
 const blocks = [];
 for (const what of settings.show) {
     if (what === 'character') blocks.push(characterRows());
