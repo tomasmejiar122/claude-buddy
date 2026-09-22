@@ -91,8 +91,8 @@ Copia `claude-buddy.mjs` a `~/.claude/` y `commands/buddy.md` a `~/.claude/comma
 ```json
 {
   "projects": {
-    "c:/code/api": { "character": "gato", "size": "mini",
-                     "segments": ["model", "dir", "git", "context"] },
+    "c:/code/api": { "character": "gato", "size": "mini", "align": "center",
+                     "segments": ["model", "dir", "git", "context", "clock"] },
     "c:/code/web": "robot"
   },
   "mode": "buddies",
@@ -103,7 +103,8 @@ Copia `claude-buddy.mjs` a `~/.claude/` y `commands/buddy.md` a `~/.claude/comma
 - `projects`: lo que vale para cada carpeta. Gana la carpeta más específica.
 - `mode`: `"buddies"` hace que las carpetas sin configurar usen `auto` en vez de Mr.
 - `mrIrrelevant`: carpetas que siempre muestran a Mr. Admite comodines como `*`.
-- `character`, `size` y `segments` también se pueden poner en la raíz, como valores por defecto para todo.
+- `character`, `size`, `align`, `at`, `margin` y `segments` también se pueden poner en la raíz, como valores por defecto para todo.
+- Una carpeta cubre todo lo que tenga dentro, así que basta configurarla una vez para todos sus proyectos.
 
 ## Desinstalar
 
