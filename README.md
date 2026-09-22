@@ -23,6 +23,7 @@ Sin argumentos abre menús para elegir personaje, tamaño y datos; con argumento
 /buddy gato                cambia el personaje de esta carpeta
 /buddy panda mini          personaje y tamaño a la vez
 /buddy grande              solo el tamaño
+/buddy derecha 90          corre el personaje hacia la derecha
 /buddy segments model dir git context clock
 /buddy reset               vuelve a lo predeterminado
 ```
@@ -30,6 +31,8 @@ Sin argumentos abre menús para elegir personaje, tamaño y datos; con argumento
 Todo se guarda por carpeta (y cubre lo que haya dentro) en `~/.claude/claude-buddy.json`.
 
 **Tamaños:** `mini` (4 líneas, con una versión 8×8 del personaje), `normal` (7 líneas), `grande` (13 líneas).
+
+**Posición:** `at` es la columna donde empieza el personaje, por si lo quieres pegado al borde derecho.
 
 **Segmentos**, en el orden que los escribas: `model`, `dir`, `git`, `context`, `mood`, `clock`, `session` (duración de la sesión) y `lines` (líneas añadidas y quitadas por Claude). Se acomodan solos en varias líneas.
 

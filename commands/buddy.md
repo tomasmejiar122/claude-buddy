@@ -29,6 +29,9 @@ lo que haya dentro:
   `context`, `mood`, `clock` (la hora), `session` (duración de la sesión),
   `lines` (líneas añadidas y quitadas). Los predeterminados son `model`,
   `dir`, `git`, `context`, `mood`.
+- **`at`**: la columna donde empieza el personaje, para correrlo a la derecha.
+  `0` lo pone justo después del texto; `70` o `90` lo llevan al borde en una
+  terminal ancha.
 
 ## Qué hacer
 
@@ -53,9 +56,10 @@ lo que haya dentro:
 
 3. **Si `$ARGUMENTS` trae texto**, no muestres menús: interprétalo. Puede traer
    un personaje (`gato`, `mr`, `auto`), un tamaño (`mini`, `normal`, `grande`),
-   segmentos (`segments model dir git context clock`, `con hora`, `sin mood`) o
-   `reset` para borrar la configuración de esta carpeta. Si algo no se
-   entiende, dilo y muestra las opciones.
+   la posición (`derecha 90`, `pegado`), segmentos (`segments model dir git
+   context clock`, `con hora`, `sin mood`) o `reset` para borrar la
+   configuración de esta carpeta. Si algo no se entiende, dilo y muestra las
+   opciones.
 
 4. Escribe solo las claves que se pidieron, conservando el resto de la entrada
    de esta carpeta y del archivo.

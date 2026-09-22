@@ -129,7 +129,8 @@ function buildInfo(segments) {
 
 function writeRows(rows, segments) {
     const info = buildInfo(segments);
-    const width = Math.max(30, ...info.map(visible));
+    // The character starts at column "at" when that leaves room for the text
+    const width = Math.max(30, settings.at - 2, ...info.map(visible));
     const top = Math.max(0, Math.floor((rows.length - info.length) / 2));
     // Claude Code trims leading whitespace (NBSP included), which would glue
     // rows without info text to the left edge; they start with BLANK instead.
@@ -219,6 +220,8 @@ function settingsFor(cfg) {
         character: entry.character || cfg.character || fallback,
         size: SIZES[entry.size || cfg.size] || 'normal',
         segments: entry.segments || cfg.segments || DEFAULT_SEGMENTS,
+        // column where the character starts (0 = right after the text)
+        at: Number(entry.at ?? cfg.at ?? 0) || 0,
     };
 }
 
