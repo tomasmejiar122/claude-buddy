@@ -32,6 +32,9 @@ lo que haya dentro:
 - **`at`**: dónde empieza el personaje. `"right"` (lo predeterminado) lo pega
   al borde derecho de la terminal; `0` lo pone justo después del texto; un
   número lo fija en esa columna.
+- **`margin`**: columnas libres al borde derecho, `4` por defecto. Súbelo si el
+  personaje se ve cortado.
+- **`align`**: `left` (por defecto) o `center` para el bloque de texto.
 
 ## Qué hacer
 

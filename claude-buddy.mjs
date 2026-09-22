@@ -134,7 +134,9 @@ function writeRows(rows, segments) {
     // (Claude Code sets COLUMNS to the terminal width), or at a fixed column
     const spriteWidth = Math.max(0, ...rows.map(visible));
     const cols = Number(process.env.COLUMNS) || 0;
-    const at = settings.at === 'right' && cols ? cols - spriteWidth - 1 : Number(settings.at) || 0;
+    const at = settings.at === 'right' && cols
+        ? Math.max(0, cols - spriteWidth - settings.margin)
+        : Number(settings.at) || 0;
     const width = Math.max(textWidth, at - 2);
     const top = Math.max(0, Math.floor((rows.length - info.length) / 2));
     // Claude Code trims leading whitespace (NBSP included), which would glue
@@ -142,7 +144,11 @@ function writeRows(rows, segments) {
     const out = rows.map((row, i) => {
         const j = i - top;
         const text = j >= 0 && j < info.length ? info[j] : BLANK;
-        return `${reset}${text}${NBSP.repeat(width - visible(text) + 2)}${row}${reset}`;
+        // "center" centers each line of text inside the text block
+        const indent = settings.align === 'center'
+            ? Math.floor((textWidth - visible(text)) / 2) : 0;
+        return `${reset}${NBSP.repeat(indent)}${text}` +
+            `${NBSP.repeat(width - indent - visible(text) + 2)}${row}${reset}`;
     });
     process.stdout.write(out.join('\n') + '\n');
 }
@@ -159,6 +165,14 @@ function saveState() {
 const SIZES = { mini: 'mini', normal: 'normal', grande: 'grande' };
 function render(grid, pal, size = 'normal') {
     const rgb = (c) => `${c[0]};${c[1]};${c[2]}`;
+    // Drop fully transparent columns on both sides, so the drawing is exactly
+    // as wide as its pixels and lines up with the right edge
+    let first = grid[0].length, last = -1;
+    for (const row of grid) {
+        const a = row.search(/[^.]/), b = row.search(/\.*$/);
+        if (a >= 0) { first = Math.min(first, a); last = Math.max(last, b - 1); }
+    }
+    if (last >= first) grid = grid.map((row) => row.slice(first, last + 1));
     if (size === 'grande') {
         return grid.map((row) => {
             let s = '';
@@ -228,6 +242,10 @@ function settingsFor(cfg) {
         // where the character starts: "right" (the terminal's right edge), a
         // column number, or 0 to put it right after the text
         at: entry.at ?? cfg.at ?? 'right',
+        // columns left free at the right edge (Claude Code insets the bar a bit)
+        margin: Number(entry.margin ?? cfg.margin ?? 4) || 0,
+        // "left" or "center" for the text block
+        align: entry.align || cfg.align || 'left',
     };
 }
 
