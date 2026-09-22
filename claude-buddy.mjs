@@ -124,7 +124,15 @@ function buildInfo(segments) {
         curWidth += w + 3;
     }
     if (cur.length) lines.push(cur);
-    return lines.map((cells) => cells.join(` ${dim}|${reset} `));
+    // Pad every column to the same width so the separators line up
+    const colWidth = [];
+    for (const cells of lines) {
+        cells.forEach((cell, i) => { colWidth[i] = Math.max(colWidth[i] || 0, visible(cell)); });
+    }
+    return lines.map((cells) => cells
+        .map((cell, i) => cell + NBSP.repeat(colWidth[i] - visible(cell)))
+        .join(` ${dim}|${reset} `)
+        .replace(/[ ]+$/, ''));
 }
 
 function writeRows(rows, segments) {
