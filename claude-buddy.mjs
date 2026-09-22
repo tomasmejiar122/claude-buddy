@@ -178,87 +178,6 @@ function render(grid, pal, size = 'normal') {
     return rows;
 }
 
-// ---- pixel text: the clock and phrases ----
-
-// 3x5 pixel font, one string per row
-const FONT = {
-    '0': '###,#.#,#.#,#.#,###', '1': '.#.,##.,.#.,.#.,###', '2': '###,..#,###,#..,###',
-    '3': '###,..#,.##,..#,###', '4': '#.#,#.#,###,..#,..#', '5': '###,#..,###,..#,###',
-    '6': '###,#..,###,#.#,###', '7': '###,..#,..#,..#,..#', '8': '###,#.#,###,#.#,###',
-    '9': '###,#.#,###,..#,###', ':': '...,.#.,...,.#.,...', '.': '...,...,...,...,.#.',
-    ',': '...,...,...,.#.,#..', '!': '.#.,.#.,.#.,...,.#.', '?': '###,..#,.##,...,.#.',
-    '-': '...,...,###,...,...', "'": '.#.,.#.,...,...,...', '/': '..#,..#,.#.,#..,#..',
-    '+': '...,.#.,###,.#.,...', '*': '#.#,.#.,#.#,...,...', '%': '#.#,..#,.#.,#..,#.#',
-    'A': '###,#.#,###,#.#,#.#', 'B': '##.,#.#,##.,#.#,##.', 'C': '###,#..,#..,#..,###',
-    'D': '##.,#.#,#.#,#.#,##.', 'E': '###,#..,##.,#..,###', 'F': '###,#..,##.,#..,#..',
-    'G': '###,#..,#.#,#.#,###', 'H': '#.#,#.#,###,#.#,#.#', 'I': '###,.#.,.#.,.#.,###',
-    'J': '..#,..#,..#,#.#,###', 'K': '#.#,#.#,##.,#.#,#.#', 'L': '#..,#..,#..,#..,###',
-    'M': '#.#,###,###,#.#,#.#', 'N': '#.#,##.,#.#,#.#,#.#', 'O': '###,#.#,#.#,#.#,###',
-    'P': '###,#.#,###,#..,#..', 'Q': '###,#.#,#.#,###,..#', 'R': '###,#.#,##.,#.#,#.#',
-    'S': '###,#..,###,..#,###', 'T': '###,.#.,.#.,.#.,.#.', 'U': '#.#,#.#,#.#,#.#,###',
-    'V': '#.#,#.#,#.#,#.#,.#.', 'W': '#.#,#.#,###,###,#.#', 'X': '#.#,#.#,.#.,#.#,#.#',
-    'Y': '#.#,#.#,.#.,.#.,.#.', 'Z': '###,..#,.#.,#..,###',
-    'Á': '###,#.#,###,#.#,#.#', 'É': '###,#..,##.,#..,###', 'Í': '###,.#.,.#.,.#.,###',
-    'Ó': '###,#.#,#.#,#.#,###', 'Ú': '#.#,#.#,#.#,#.#,###', 'Ñ': '###,#.#,##.,###,#.#',
-};
-
-// A string becomes a pixel grid 5 rows tall, one blank column between letters
-function textGrid(text) {
-    const rows = ['', '', '', '', ''];
-    for (const ch of text.toUpperCase()) {
-        const glyph = FONT[ch];
-        if (!glyph) { for (let i = 0; i < 5; i++) rows[i] += '..'; continue; }
-        const parts = glyph.split(',');
-        for (let i = 0; i < 5; i++) rows[i] += parts[i] + '.';
-    }
-    return rows;
-}
-
-// Colors across the text: a gradient, a rainbow, the context color or a fixed one
-function textColorAt(style, x, width) {
-    const t = width > 1 ? x / (width - 1) : 0;
-    if (style === 'arcoiris') return hueRgb((t * 300 + frame * 12) % 360);
-    if (style === 'contexto') return pct >= 80 ? [255, 90, 90] : pct >= 50 ? [255, 200, 90] : [120, 230, 140];
-    if (Array.isArray(style)) return style;
-    const a = [139, 123, 245], b = [192, 105, 207];  // brand gradient
-    return a.map((v, i) => Math.round(v + (b[i] - v) * t));
-}
-
-function hueRgb(hue) {
-    const h = ((hue % 360) + 360) % 360 / 60, s = 0.5;
-    const x = 1 - s * (1 - Math.abs((h % 2) - 1)), m = 1 - s;
-    const c = [[1, x, m], [x, 1, m], [m, 1, x], [m, x, 1], [x, m, 1], [1, m, x]][Math.floor(h)];
-    return c.map((v) => Math.round(v * 255));
-}
-
-// Draw a pixel grid ('#' = on) scaled up, as terminal rows
-function renderPixels(grid, style, scale) {
-    const width = grid[0].length;
-    const big = [];
-    for (const row of grid) {
-        let line = '';
-        for (const ch of row) line += ch.repeat(scale);
-        for (let i = 0; i < scale; i++) big.push(line);
-    }
-    if (big.length % 2) big.push('.'.repeat(width * scale));
-    const rgb = (c) => `${c[0]};${c[1]};${c[2]}`;
-    const rows = [];
-    for (let l = 0; l < big.length / 2; l++) {
-        const top = big[2 * l], bot = big[2 * l + 1];
-        let s = '';
-        for (let c = 0; c < top.length; c++) {
-            const col = rgb(textColorAt(style, c, top.length));
-            const t = top[c] === '#', b = bot[c] === '#';
-            if (!t && !b) s += `${reset} `;
-            else if (!b) s += `${reset}${ESC}[38;2;${col}m▀`;
-            else if (!t) s += `${reset}${ESC}[38;2;${col}m▄`;
-            else s += `${ESC}[38;2;${col};48;2;${col}m▀`;
-        }
-        rows.push(s);
-    }
-    return rows;
-}
-
 // Everyone gets darker as the context fills past 50%
 function tire(pal, keep = []) {
     const k = 1 - Math.min(1, Math.max(0, (pct - 50) / 40)) * 0.45;
@@ -300,10 +219,6 @@ function settingsFor(cfg) {
         character: entry.character || cfg.character || fallback,
         size: SIZES[entry.size || cfg.size] || 'normal',
         segments: entry.segments || cfg.segments || DEFAULT_SEGMENTS,
-        // what goes on the right: any of "character", "clock", "text"
-        show: [].concat(entry.show || cfg.show || ['character']),
-        text: entry.text || cfg.text || '',
-        color: entry.color || cfg.color || 'degradado',
     };
 }
 
@@ -442,36 +357,6 @@ function characterRows() {
     return render(grid, colors, settings.size);
 }
 
-// ---- what goes on the right: the character, a pixel clock, a pixel phrase ----
-
-const COLORS = { degradado: 'degradado', arcoiris: 'arcoiris', contexto: 'contexto' };
-// The letters go one step smaller than the character, so a clock next to it
-// does not swallow it
-const textScale = { mini: 1, normal: 1, grande: 2 }[settings.size];
-const blocks = [];
-for (const what of settings.show) {
-    if (what === 'character') blocks.push(characterRows());
-    else if (what === 'clock') {
-        const d = new Date();
-        const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-        blocks.push(renderPixels(textGrid(hhmm), COLORS[settings.color] || settings.color, textScale));
-    } else if (what === 'text' && settings.text) {
-        blocks.push(renderPixels(textGrid(settings.text), COLORS[settings.color] || settings.color, textScale));
-    }
-}
-if (!blocks.length) blocks.push(['']);
-
-// Side by side, vertically centered
-const height = Math.max(...blocks.map((b) => b.length));
-const rows = [];
-for (let i = 0; i < height; i++) {
-    const parts = blocks.map((b) => {
-        const top = Math.floor((height - b.length) / 2);
-        const row = b[i - top];
-        return row === undefined ? ' '.repeat(visible(b[0] || '')) : row;
-    });
-    rows.push(parts.join(`${reset}  `));
-}
-writeRows(rows, settings.segments);
+writeRows(characterRows(), settings.segments);
 
 saveState();
